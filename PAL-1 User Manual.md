@@ -1,4 +1,4 @@
-The manual for the PAL-1 is available for download, but is in Chinese. This is my attempt to capture the translation of that material as I go through it.
+> The manual for the PAL-1 is available for download, but is in Chinese. This is my attempt to capture the translation of that material as I go through it. Blockquotes such as this are used for notes related to the translation or content.
 
 # PAL-1 Eight-Bit Computer User Manual
 
@@ -15,7 +15,7 @@ November 2020
 
 Technical Support: liugn@outlook.com
 
-> Blockquotes are notes related to the translation or content. Obviously the translation is also not responsible for inaccuracies and meant for reference only.
+> Obviously the translation is also not responsible for inaccuracies and meant for reference only.
 
 ***
 
