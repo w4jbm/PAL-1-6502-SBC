@@ -27,8 +27,8 @@ Table of Contents
 
 Thank you for supporting PAL-1!
 
-If you purchased a PAL-1 kit, the uninstalled chips may be damaged by electrostatic discharge, please pay attention to the installation operation
-The problem of static electricity at the time! Although static electricity has little effect on the components that have been installed on the PCB (PAL motherboard), it is recommended
+If you purchased the PAL-1 as a kit, be aware that the uninstalled chips may be damaged by electrostatic discharge. Please use the appropriate precations during the construction and installation process. Although static electricity will have little effect on the components once they have been installed on the PCB (PAL-1 motherboard), care must be taken prior to and during their installation
+it is recommended
 It is recommended that when touching the metal part of the PAL directly, make sure that the static electricity has been discharged, and touch the object that has been electrically charged in dry weather.
 Products, such as door handles, stair handrails, water pipes.
 PAL-1 is a single board computer (Single Board Computer) based on MOS 6502 microprocessor.
