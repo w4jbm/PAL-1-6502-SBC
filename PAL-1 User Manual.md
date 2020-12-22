@@ -37,17 +37,16 @@ While it is compatible with most programs written for KIM-1, some chips such as 
 
 Another difference is that each 6530 chip originally provided 64 bytes of RAM while the 6532 provides 128 bytes of RAM. With appropriate address decoding, a single 6532 can replace the RAM found on two 6530s.
 
-PAL-1 reduces the two 6530 chips on the KIM-1 to one 6532, which is mainly done to reduce the number of core chips
-Although 6532 can still be found, it is also difficult. After reducing a slice of 6532 through the above replacement scheme,
-PAL-1 loses 50% of I/O ports and 50% of timers while maintaining compatibility with KIM-1's core capabilities;
-In spite of this, PAL-1 can still add more I/O or peripherals via expansion cards as needed.
-After I completed the PAL-1 experiment, I really like this classic computing platform. It can bring me 1970~80
-It’s a super cool computing experience, and don’t worry about damaging the delicate and rare original KIM-1.
-Hope you can also find the budding feeling of personal computers on PAL-1 & Happy Hacking with 6502!
+The PAL-1 replaces the two 6530 chips on the original KIM-1 with a single 6532 reduce chip count. (While still available, even the 6532 can be difficult to obtain.) As a result, the PAL-1 loses half of the I/O ports and half of the timers found on the original KIM-1 while remaining generally compatable. Also, the PAL-1 can add more I/O or peripherals using its expansion bus if needed.
+
+Overall I really like this approach to reviving a classic computing platform. It brings the 1970s/1980s computing experience without the need for worrying about  damaging a delicate and rare original KIM-1.
+
+Hopefully you also enjoy the rewarding feeling of building and operating your own PAL-1... And Happy Hacking with 6502!
+
 Liu Ganning (刘甘宁)
 
 
-KIM-1
+## KIM-1
 KIM-1 was established by MOS Technology in 1976
 The MOS 6502 microprocessor-based small
 Type single board computer, which is considered the earliest
