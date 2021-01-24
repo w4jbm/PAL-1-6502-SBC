@@ -17,3 +17,7 @@ The connector that came with mine is a male DB-9. Most USB serial interfaces (or
 I am powering mine off a metered and regulated variable power supply. At 6 volts, it draws between about 0.30 and 0.31 amps with the LED display going. (The current varies by how many segments you're lighting up.) When the display is disabled and you are using the serial port, consumption is around 0.26 amps.
 
 The regulator gets pretty warm if I feed it 7 volts. Another quirky thing is that with (for example) serial going, I see the 0.26 amps at 6 volts but 0.29 amps at 7 volts. A voltage regulator data sheet can do a better job explaining linear regulators than I can, but I would not expect to see current change much just because the voltage fed to the regulator goes up a bit. (Normally it is the current demands of the circuit on the regulated side of the regulator that is the main driver of current consumption.)
+
+## proc_kim
+
+I have been testing some code that determines what type of processor a system is running (the original NMOS vs. the extended CMOS commands). I want to test it on the PAL-1, so this is mainly work-in-progress for now...
