@@ -1,0 +1,172 @@
+
+; 64tass Turbo Assembler Macro V1.55.2200 listing file
+; 64tass --intel-hex -o proc_kim.hex -m --verbose-list -L proc_kim.lst proc_kim.a65
+; Sun Jan 24 17:19:33 2021
+
+;Offset	;Hex		;Source
+
+;******  Processing input file: proc_kim.a65
+
+			; This program looks at ways to determine which type of 6502-series
+			; processor you are using. This version runs on the PAL-1 (a KIM clone).
+			;
+			; By Jim McClanahan, W4JBM, January 2021
+			;
+			; Build with:
+			; $ 64tass --intel-hex proc_kim.a65 -o proc_kim.hex -m --verbose-list -L proc_kim.lst
+			; $ cp proc_kim.hex proc_kim_orig.hex
+			; $ srec_cat proc_kim_orig.hex -intel -o proc_kim.hex -intel -obs=16 -address-length=2
+			;
+			; (The srec command is needed to limit the size of the hex records to 16 bytes of data.)
+
+			;
+			; For whatever system we use, we need two routines defined:
+			;
+			; *** KIM ROM Routines ***
+			;
+			; A routine to send a byte to the console...
+=$1ea0			xOutpt	= $1EA0	; Send one byte to the output port (OUTCH)
+			;
+			; ...and the reset vector to restart the system.
+=$1c4f			xReset	= $1C4F	; Cold start of the system (START)
+
+			; Define any constants we want to use...
+=$0d			CR	= $0D
+=$0a			LF	= $0A
+
+			; Location isn't particularly important...
+			*	= $0200
+
+			; Set up the stack
+			;
+			; This is not needed if called from a monitor
+			;STACK:	LDX #$FF
+			;	TXS
+
+			; First, let's see what happens to the Zero flag in
+			; the decimal mode
+.0200	f8		TEST1:	SED		; Set Decimal (BCD) Mode
+.0201	18			CLC		; Clear the Carry Flag
+.0202	a9 99			LDA #$99	; Load a BCD 99 (which is also $99)
+.0204	69 01			ADC #$01	; ...and add 1
+.0206	08			PHP		; Push processor status byte to stack
+.0207	8d 6b 02		STA TSTR1	; Store the result in memory
+.020a	d8			CLD		; Because we don't want to forget
+
+			; At this point, the Acc is $00 but the original 6502 did not
+			; set the Zero flag when this happened in the decimal mode
+			; while the later R6502 and 65C02 did.
+
+.020b	f0 10			BEQ TEST1B
+.020d	a9 6f		TEST1A:	LDA #MSG1&255	; Point to Message 1
+.020f	8d 60 02		STA PRINT+1
+.0212	a9 02			LDA #MSG1/256
+.0214	8d 61 02		STA PRINT+2
+.0217	20 5d 02		JSR SHWMSG	; Display result (no Z flag)
+.021a	4c 2a 02		JMP TEST2
+
+.021d	a9 97		TEST1B:	LDA #MSG2&255	; Point to Message 2
+.021f	8d 60 02		STA PRINT+1
+.0222	a9 02			LDA #MSG2/256
+.0224	8d 61 02		STA PRINT+2
+.0227	20 5d 02		JSR SHWMSG	; Display result (Z flag set)
+
+			; On the original 6502, undefined instructions could do various
+			; (and sometimes seemingly unpredictable) things. On later versions,
+			; some of the unused instructions were pressed into use while others
+			; were changed to be a "safe" NOP (no operation).
+			;
+			; $EA is NOP and on the original most of the $xA instructions also
+			; act as NOPs. $1A is one that seems to be a well-behaved NOP, but
+			; the R6502 and 65C02 used that previously undefined code to
+			; implement an INC A instruction.
+			;
+			; The following code checks to see what $3A does...
+
+.022a	68		TEST2:	PLA		; Before the test, let's story the processor
+.022b	8d 6c 02		STA TSTR2	;   results from the last test.
+.022e	a9 ff			LDA #$FF	; Load the accumulator
+>0230	1a			.BYTE $1A	; Either a NOP or INA (similar to INX and INY)
+.0231	49 00			EOR #$0		; Let's make sure the flags are set
+.0233	08			PHP		; Save the processor status register
+.0234	8d 6d 02		STA TSTR3	; Store result in memory
+.0237	f0 10			BEQ TEST2B	; Does A == 0?
+.0239	a9 b6		TEST2A:	LDA #MSG3&255	; If not, Point to Message 3
+.023b	8d 60 02		STA PRINT+1
+.023e	a9 02			LDA #MSG3/256
+.0240	8d 61 02		STA PRINT+2
+.0243	20 5d 02		JSR SHWMSG
+.0246	4c 56 02		JMP FINISH
+
+.0249	a9 d7		TEST2B:	LDA #MSG4&255	; Point to Message 4
+.024b	8d 60 02		STA PRINT+1
+.024e	a9 02			LDA #MSG4/256
+.0250	8d 61 02		STA PRINT+2
+.0253	20 5d 02		JSR SHWMSG
+
+.0256	68		FINISH:	PLA		; Let's store the processor status
+.0257	8d 6e 02		STA TSTR4	;   from the last test.
+.025a	4c 4f 1c		JMP xReset	; We're done so jump back to the monitor
+			;	RTS		; ...depending on the system, RTS may work
+
+			; If you don't want to go to the monitor, you can loop instead...
+
+			;LOOP:	JMP LOOP	; Now just loop endlessly...
+
+			; Display a null-terminated message...
+
+.025d	a0 00		SHWMSG:	LDY #$0		; Show Message Subroutine
+.025f	b9 6f 02	PRINT:	LDA MSG1,Y	; SELF MODIFYING Address and Offset
+.0262	f0 06			BEQ DONE	; Did we just load a $00 end-of-string?
+.0264	20 a0 1e		JSR xOutpt	; If not, print it
+.0267	c8			INY		; Point to next character
+.0268	d0 f5			BNE PRINT	; Branch to do it again...
+.026a	60		DONE:	RTS		; Jump here at end-of-string or 256 characters
+
+			;
+			; If we don't have console output, you can get information on
+			; what happened by looking at the results stored here.
+			;
+			;	7  4 3  0
+			;	---- ----
+			;	NVbb DIZC
+			;
+			;	N - Negative
+			;	V - oVerflow
+			;	D - Decimal mode
+			;	I - Interrupt disable
+			;	Z - Zero
+			;	C - Carry
+			;
+			;	bb should be %11 (usually a $3x in these tests) to show the
+			;	status was pushed to the stack using PHP and not the result
+			;	of an interupt.
+
+>026b	55		TSTR1:	.BYTE $55	; Result in Decimal mode of $99 + $01
+>026c	55		TSTR2:	.BYTE $55	; ...and process status register
+>026d	55		TSTR3:	.BYTE $55	; Result of $FF and then executing NOP/INC A
+>026e	55		TSTR4:	.BYTE $55	; ...and the process status register
+
+			; TSTR1, TSTR2, TSTR3, and TSTR4 should be:
+			; $00 $39 $FF $B0 for the original 6502
+			; $00 $3B $00 $32 for the 65C02
+
+			; Our messages follows...
+
+>026f	0d 0a 44 45	MSG1:	.NULL CR,LF,"DEC Add does not set Z. (Orig 6502)",CR,LF
+>0273	43 20 41 64 64 20 64 6f 65 73 20 6e 6f 74 20 73
+>0283	65 74 20 5a 2e 20 28 4f 72 69 67 20 36 35 30 32
+>0293	29 0d 0a 00
+>0297	0d 0a 44 45	MSG2:	.NULL CR,LF,"DEC Add did set Z. (65C02)",CR,LF
+>029b	43 20 41 64 64 20 64 69 64 20 73 65 74 20 5a 2e
+>02ab	20 28 36 35 43 30 32 29 0d 0a 00
+>02b6	24 31 41 20	MSG3:	.NULL "$1A acts as a NOP. (Orig 6502)",CR,LF
+>02ba	61 63 74 73 20 61 73 20 61 20 4e 4f 50 2e 20 28
+>02ca	4f 72 69 67 20 36 35 30 32 29 0d 0a 00
+>02d7	24 31 41 20	MSG4:	.NULL "$1A acts as INC A. (65C02)",CR,LF
+>02db	61 63 74 73 20 61 73 20 49 4e 43 20 41 2e 20 28
+>02eb	36 35 43 30 32 29 0d 0a 00
+
+			.END
+
+;******  End of listing

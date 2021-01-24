@@ -1,0 +1,153 @@
+; This program looks at ways to determine which type of 6502-series
+; processor you are using. This version runs on the PAL-1 (a KIM clone).
+;
+; By Jim McClanahan, W4JBM, January 2021
+;
+; Build with:
+; $ 64tass --intel-hex proc_kim.a65 -o proc_kim.hex -m --verbose-list -L proc_kim.lst
+; $ cp proc_kim.hex proc_kim_orig.hex
+; $ srec_cat proc_kim_orig.hex -intel -o proc_kim.hex -intel -obs=16 -address-length=2
+;
+; (The srec command is needed to limit the size of the hex records to 16 bytes of data.)
+
+;
+; For whatever system we use, we need two routines defined:
+;
+; *** KIM ROM Routines ***
+;
+; A routine to send a byte to the console...
+xOutpt	= $1EA0	; Send one byte to the output port (OUTCH)
+;
+; ...and the reset vector to restart the system.
+xReset	= $1C4F	; Cold start of the system (START)
+
+; Define any constants we want to use...
+CR	= $0D
+LF	= $0A
+
+; Location isn't particularly important...
+*	= $0200
+
+; Set up the stack
+;
+; This is not needed if called from a monitor
+;STACK:	LDX #$FF
+;	TXS
+
+; First, let's see what happens to the Zero flag in
+; the decimal mode
+TEST1:	SED		; Set Decimal (BCD) Mode
+	CLC		; Clear the Carry Flag
+	LDA #$99	; Load a BCD 99 (which is also $99)
+	ADC #$01	; ...and add 1
+	PHP		; Push processor status byte to stack
+	STA TSTR1	; Store the result in memory
+	CLD		; Because we don't want to forget
+
+; At this point, the Acc is $00 but the original 6502 did not
+; set the Zero flag when this happened in the decimal mode
+; while the later R6502 and 65C02 did.
+
+	BEQ TEST1B
+TEST1A:	LDA #MSG1&255	; Point to Message 1
+	STA PRINT+1
+	LDA #MSG1/256
+	STA PRINT+2
+	JSR SHWMSG	; Display result (no Z flag)
+	JMP TEST2
+	
+TEST1B:	LDA #MSG2&255	; Point to Message 2
+	STA PRINT+1
+	LDA #MSG2/256
+	STA PRINT+2
+	JSR SHWMSG	; Display result (Z flag set)
+
+; On the original 6502, undefined instructions could do various
+; (and sometimes seemingly unpredictable) things. On later versions,
+; some of the unused instructions were pressed into use while others
+; were changed to be a "safe" NOP (no operation).
+;
+; $EA is NOP and on the original most of the $xA instructions also
+; act as NOPs. $1A is one that seems to be a well-behaved NOP, but
+; the R6502 and 65C02 used that previously undefined code to
+; implement an INC A instruction.
+;
+; The following code checks to see what $3A does...
+
+TEST2:	PLA		; Before the test, let's story the processor
+	STA TSTR2	;   results from the last test.
+	LDA #$FF	; Load the accumulator
+	.BYTE $1A	; Either a NOP or INA (similar to INX and INY)
+	EOR #$0		; Let's make sure the flags are set
+	PHP		; Save the processor status register
+	STA TSTR3	; Store result in memory
+	BEQ TEST2B	; Does A == 0?
+TEST2A:	LDA #MSG3&255	; If not, Point to Message 3
+	STA PRINT+1
+	LDA #MSG3/256
+	STA PRINT+2
+	JSR SHWMSG
+	JMP FINISH
+	
+TEST2B:	LDA #MSG4&255	; Point to Message 4
+	STA PRINT+1
+	LDA #MSG4/256
+	STA PRINT+2
+	JSR SHWMSG
+
+FINISH:	PLA		; Let's store the processor status
+	STA TSTR4	;   from the last test.
+	JMP xReset	; We're done so jump back to the monitor
+;	RTS		; ...depending on the system, RTS may work
+
+; If you don't want to go to the monitor, you can loop instead...
+
+;LOOP:	JMP LOOP	; Now just loop endlessly...
+
+; Display a null-terminated message...
+
+SHWMSG:	LDY #$0		; Show Message Subroutine
+PRINT:	LDA MSG1,Y	; SELF MODIFYING Address and Offset
+	BEQ DONE	; Did we just load a $00 end-of-string?
+	JSR xOutpt	; If not, print it
+	INY		; Point to next character
+	BNE PRINT	; Branch to do it again...
+DONE:	RTS		; Jump here at end-of-string or 256 characters
+
+;
+; If we don't have console output, you can get information on
+; what happened by looking at the results stored here.
+;
+;	7  4 3  0
+;	---- ----
+;	NVbb DIZC
+;
+;	N - Negative
+;	V - oVerflow
+;	D - Decimal mode
+;	I - Interrupt disable
+;	Z - Zero
+;	C - Carry
+;
+;	bb should be %11 (usually a $3x in these tests) to show the
+;	status was pushed to the stack using PHP and not the result
+;	of an interupt.
+
+TSTR1:	.BYTE $55	; Result in Decimal mode of $99 + $01
+TSTR2:	.BYTE $55	; ...and process status register
+TSTR3:	.BYTE $55	; Result of $FF and then executing NOP/INC A
+TSTR4:	.BYTE $55	; ...and the process status register
+
+; TSTR1, TSTR2, TSTR3, and TSTR4 should be:
+; $00 $39 $FF $B0 for the original 6502
+; $00 $3B $00 $32 for the 65C02
+
+; Our messages follows...
+
+MSG1:	.NULL CR,LF,"DEC Add does not set Z. (Orig 6502)",CR,LF
+MSG2:	.NULL CR,LF,"DEC Add did set Z. (65C02)",CR,LF
+MSG3:	.NULL "$1A acts as a NOP. (Orig 6502)",CR,LF
+MSG4:	.NULL "$1A acts as INC A. (65C02)",CR,LF
+
+.END
+
