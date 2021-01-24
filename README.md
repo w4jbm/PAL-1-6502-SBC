@@ -6,6 +6,8 @@ Feel free to correct me, but in general the KIM, introduced in 1976, seems to ha
 
 There are a number of 'clones' available ranging from ones that support the old expansion bus to simple ones based on Arduino emulators that cost under $20. The PAL-1 is availabe on [Tindie](https://www.tindie.com/products/tkoak/pal-1-a-mos-6502-powered-computer-kit/) although it sells out quickly and isn't available sometimes.
 
+It seems to be based on Vince Briel's [Micro-KIM](http://www.brielcomputers.com/wordpress/?cat=24) which seemed to based on Ruud Baltissen's [Build Your Own KIM](http://www.baltissen.org/newhtm/buildkim.htm).
+
 
 ## Serial Interface
 
