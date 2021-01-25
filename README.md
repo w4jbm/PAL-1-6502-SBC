@@ -28,8 +28,8 @@ Once it is ready, you can get into the serial monitor. I have had to set fairly 
 ```
 L (start load, begin transfer of file)
 (you should see the data loading until the terminating record)
-xxxx<space bar> (type in the address where you want to befin execution)
-G (this starts running at the current pointer)
+xxxx<space bar> (type in the address where you want to begin execution)
+G (this starts running at the address you just entered)
 ```
 
 
