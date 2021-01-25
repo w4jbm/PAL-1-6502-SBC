@@ -5,10 +5,8 @@
 ;
 ; Build with:
 ; $ 64tass --intel-hex proc_kim.a65 -o proc_kim.hex -m --verbose-list -L proc_kim.lst
-; $ cp proc_kim.hex proc_kim_orig.hex
-; $ srec_cat proc_kim_orig.hex -intel -o proc_kim.hex -intel -obs=16 -address-length=2
+; $ srec_cat proc_kim.hex -intel -o proc_kim.mos -MOS_Technologies
 ;
-; (The srec command is needed to limit the size of the hex records to 16 bytes of data.)
 
 ;
 ; For whatever system we use, we need two routines defined:
