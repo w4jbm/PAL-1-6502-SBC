@@ -104,11 +104,11 @@ FINISH:	PLA		; Let's store the processor status
 
 ; Display a null-terminated message...
 
-SHWMSG:	LDY #$0		; Show Message Subroutine
-PRINT:	LDA MSG1,Y	; SELF MODIFYING Address and Offset
+SHWMSG:	LDX #$0		; Show Message Subroutine
+PRINT:	LDA MSG1,X	; SELF MODIFYING Address and Offset
 	BEQ DONE	; Did we just load a $00 end-of-string?
 	JSR xOutpt	; If not, print it
-	INY		; Point to next character
+	INX		; Point to next character
 	BNE PRINT	; Branch to do it again...
 DONE:	RTS		; Jump here at end-of-string or 256 characters
 

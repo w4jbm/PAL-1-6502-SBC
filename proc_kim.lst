@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex -o proc_kim.hex -m --verbose-list -L proc_kim.lst proc_kim.a65
-; Mon Jan 25 07:28:01 2021
+; Mon Jan 25 11:26:48 2021
 
 ;Offset	;Hex		;Source
 
@@ -113,11 +113,11 @@
 
 			; Display a null-terminated message...
 
-.025d	a0 00		SHWMSG:	LDY #$0		; Show Message Subroutine
-.025f	b9 6f 02	PRINT:	LDA MSG1,Y	; SELF MODIFYING Address and Offset
+.025d	a2 00		SHWMSG:	LDX #$0		; Show Message Subroutine
+.025f	bd 6f 02	PRINT:	LDA MSG1,X	; SELF MODIFYING Address and Offset
 .0262	f0 06			BEQ DONE	; Did we just load a $00 end-of-string?
 .0264	20 a0 1e		JSR xOutpt	; If not, print it
-.0267	c8			INY		; Point to next character
+.0267	e8			INX		; Point to next character
 .0268	d0 f5			BNE PRINT	; Branch to do it again...
 .026a	60		DONE:	RTS		; Jump here at end-of-string or 256 characters
 
