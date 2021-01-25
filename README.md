@@ -46,4 +46,4 @@ I have been testing some code that determines what type of processor a system is
 
 My kit has a UMC UM6502 which is an NMOS device that has the original behavior. The four bit "signiture" I gater is `$00 $B0 $FF $B4`. The second byte shows that the Z flag was not set after doing BCD addition of $99 + $01. The third byte shows that $1A acted as a NOP instead of an INC A which is the expected behavior from the older NMOS devices.
 
-The serial display of the messages isn't working, but I think I might need to do some kind of initialization before using that.
+I had to use X in the message routine because the A and Y registers are changed after calling OUTCH.
