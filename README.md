@@ -14,12 +14,36 @@ It seems to be based on Vince Briel's [Micro-KIM](http://www.brielcomputers.com/
 The connector that came with mine is a male DB-9. Most USB serial interfaces (or interfaces on older computers) are also male DB-9 wired as the DTE device. The PAL-1 has the pinout of a DCE, which would normally have a female DB-9 connector. To get things connected, I used a "gender changer" (DB-9 female-to-female with pins 2, 3, and 5 connected straigt through).
 
 
+## Loading Hex Files
+
+The serial monitor has provisions for reading 'paper tape' from a teletype that is being used as a terminal. We can use this capability to import a program. Assuming you have the program in Intel Hex format, you can get the file in the MOS Technologies paper tape format using the following commands:
+
+```
+srec_cat infile.hex -intel -o outfile.mos -MOS_Technologies
+unix2dos outfile.mos
+```
+
+Once it is ready, you can get into the serial monitor. I have had to set fairly high delays (25 ms between characters and 250 ms after a carriage return) in my terminal program to get reliable transfers. Once you are ready, type the following:
+
+```
+L (start load, begin transfer of file)
+(you should see the data loading until the terminating record)
+xxxx<space bar> (type in the address where you want to befin execution)
+G (this starts running at the current pointer)
+```
+
+
 ## Power
 
 I am powering mine off a metered and regulated variable power supply. At 6 volts, it draws between about 0.30 and 0.31 amps with the LED display going. (The current varies by how many segments you're lighting up.) When the display is disabled and you are using the serial port, consumption is around 0.26 amps.
 
 The regulator gets pretty warm if I feed it 7 volts. Another quirky thing is that with (for example) serial going, I see the 0.26 amps at 6 volts but 0.29 amps at 7 volts. A voltage regulator data sheet can do a better job explaining linear regulators than I can, but I would not expect to see current change much just because the voltage fed to the regulator goes up a bit. (Normally it is the current demands of the circuit on the regulated side of the regulator that is the main driver of current consumption.)
 
+
 ## proc_kim
 
 I have been testing some code that determines what type of processor a system is running (the original NMOS vs. the extended CMOS commands). I want to test it on the PAL-1, so this is mainly work-in-progress for now...
+
+My kit has a UMC UM6502 which is an NMOS device that has the original behavior. The four bit "signiture" I gater is `$00 $B0 $FF $B4`. The second byte shows that the Z flag was not set after doing BCD addition of $99 + $01. The third byte shows that $1A acted as a NOP instead of an INC A which is the expected behavior from the older NMOS devices.
+
+The serial display of the messages isn't working, but I think I might need to do some kind of initialization before using that.
