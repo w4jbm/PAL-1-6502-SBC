@@ -1,0 +1,118 @@
+; This program sets the PAL/KIM's LEDs to display the message, "CPU UP"
+; similar to the message from the Heathkit 6800 trainer. It just always
+; struck me as kind of cool...
+;
+; By Jim McClanahan, W4JBM, Feb 2021
+;
+; Build with:
+; $ 64tass --intel-hex cpu_up_kim.a65 -o cpu_up_kim.hex -m --verbose-list -L cpu_up_kim.lst
+; $ srec_cat cpu_up_kim.hex -intel -o cpu_up_kim.mos -MOS_Technologies
+;
+
+;
+; The addresses of the 6530/6532 used to control the LED display:
+;
+
+SAD	= $1740		; A side Data
+PADD	= $1741		; A side Data Direction
+SBD	= $1742		; B side Data
+PBDD	= $1743		; B side Data Direction
+
+; Note: For Data Direction, 0 is input and 1 is output.
+
+A_INIT	= $7F		; (PA6 - PA0 are outputs)
+B_INIT	= $1E		; (PA4 - PA1 are outputs)
+
+;
+; PAL/KIM 6502 LED Segment Layout
+;
+; A  ---
+; F |   | B
+; G  ---
+; E |   | C
+; D  ---
+;
+; PA0  (1) = A
+; PA1  (2) = B
+; PA2  (4) = C
+; PA3  (8) = D
+; PA4 (16) = E
+; PA5 (32) = F
+; PA6 (64) = G
+;
+; CPU_ UP would translate into:
+;
+; C = A+D+E+F = 1+8+16+32     = 57
+; P = A+B+E+F = 1+2+16+32     = 51
+; U = B+C+D+E+F = 2+4+8+16+32 = 62
+; _ (blank)                   = 0
+;
+; U = B+C+D+E+F = 2+4+8+16+32 = 62
+; P = A+B+E+F = 1+2+16+32     = 51
+;
+
+C	= 57
+P	= 51
+U	= 62
+BLNK	= 0
+
+
+;
+; Position Selection is done with PB1 through PB4 feeding a 1-of-10
+; decoder. Then output 4, 5, 6, 7, 8, and 9 are used. It isn't that
+; hard to build a truth table for this, but the values are also
+; well documented.
+;
+
+LED1	= $08
+LED2	= $0A
+LED3	= $0C
+LED4	= $0E
+
+LED5	= $10
+LED6	= $12
+
+;
+;        DECODER    PORT B
+; POS  OUT  D C B A  INP
+;  1    4   0 1 0 0  $08
+;  2    5   0 1 0 1  $0A
+;  3    6   0 1 1 0  $0C
+;  4    7   0 1 1 1  $0E
+;
+;  5    8   1 0 0 0  $10
+;  6    9   1 0 0 1  $12
+;
+; Note: Because the decoder is feed starting with PB1 instead of PB2
+;       we have to add an extra zero to the end of our calculation
+;       (effectively doubling the value).
+;
+
+; Location isn't particularly important...
+
+*	= $0200
+
+
+START:	LDA A_INIT	; Set the data direction bits
+	STA PADD
+	LDA B_INIT
+	STA PBDD
+	
+DISPLY:	LDA C
+	STA LED1
+	LDA P
+	STA LED2
+	LDA U
+	STA LED3
+	LDA BLNK
+	STA LED4
+
+	LDA U
+	STA LED5
+	LDA P
+	STA LED5
+
+LOOP:	JMP LOOP	; Now just loop endlessly...
+
+.END
+
