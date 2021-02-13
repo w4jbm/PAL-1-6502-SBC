@@ -42,17 +42,17 @@ B_INIT	= $1E		; (PA4 - PA1 are outputs)
 ;
 ; CPU_ UP would translate into:
 ;
-; C = A+D+E+F = 1+8+16+32     = 57
-; P = A+B+E+F = 1+2+16+32     = 51
-; U = B+C+D+E+F = 2+4+8+16+32 = 62
-; _ (blank)                   = 0
+; C = A+D+E+F = 1+8+16+32      = 57
+; P = A+B+E+F+G = 1+2+16+32+64 = 115
+; U = B+C+D+E+F = 2+4+8+16+32  = 62
+; _ (blank)                    = 0
 ;
-; U = B+C+D+E+F = 2+4+8+16+32 = 62
-; P = A+B+E+F = 1+2+16+32     = 51
+; U = B+C+D+E+F = 2+4+8+16+32  = 62
+; P = A+B+E+F+G = 1+2+16+32+64 = 115
 ;
 
 C	= 57
-P	= 51
+P	= 115
 U	= 62
 BLNK	= 0
 
@@ -93,26 +93,56 @@ LED6	= $12
 *	= $0200
 
 
-START:	LDA A_INIT	; Set the data direction bits
+START:	LDA #A_INIT	; Set the data direction bits
 	STA PADD
-	LDA B_INIT
+	LDA #B_INIT
 	STA PBDD
 	
-DISPLY:	LDA C
-	STA LED1
-	LDA P
-	STA LED2
-	LDA U
-	STA LED3
-	LDA BLNK
-	STA LED4
+DSPLY:	LDA #C		; Disply "CPU_"
+	STA SAD
+	LDA #LED1
+	STA SBD
+	JSR DELAY
 
-	LDA U
-	STA LED5
-	LDA P
-	STA LED5
+	LDA #P
+	STA SAD
+	LDA #LED2
+	STA SBD
+	JSR DELAY
+	
+	LDA #U
+	STA SAD
+	LDA #LED3
+	STA SBD
+	JSR DELAY
+	
+	LDA #BLNK
+	STA SAD
+	LDA #LED4
+	STA SBD
+	JSR DELAY
+	
+	LDA #U		; Disply "UP"
+	STA SAD
+	LDA #LED5
+	STA SBD
+	JSR DELAY
+	
+	LDA #P
+	STA SAD
+	LDA #LED6
+	STA SBD
+	JSR DELAY
 
-LOOP:	JMP LOOP	; Now just loop endlessly...
+FINSH:	JMP DSPLY	; Now do it again...
 
+DELAY:	LDY #2		; Just a simple delay routine
+	LDX #255
+DLOOP:	DEX
+	BNE DLOOP
+	DEY
+	BNE DLOOP
+	RTS
+	
 .END
 

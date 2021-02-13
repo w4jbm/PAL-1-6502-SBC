@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex -o cpu_up_kim.hex -m --verbose-list -L cpu_up_kim.lst cpu_up_kim.a65
-; Sat Feb 13 10:05:50 2021
+; Sat Feb 13 12:27:52 2021
 
 ;Offset	;Hex		;Source
 
@@ -51,17 +51,17 @@
 			;
 			; CPU_ UP would translate into:
 			;
-			; C = A+D+E+F = 1+8+16+32     = 57
-			; P = A+B+E+F = 1+2+16+32     = 51
-			; U = B+C+D+E+F = 2+4+8+16+32 = 62
-			; _ (blank)                   = 0
+			; C = A+D+E+F = 1+8+16+32      = 57
+			; P = A+B+E+F+G = 1+2+16+32+64 = 115
+			; U = B+C+D+E+F = 2+4+8+16+32  = 62
+			; _ (blank)                    = 0
 			;
-			; U = B+C+D+E+F = 2+4+8+16+32 = 62
-			; P = A+B+E+F = 1+2+16+32     = 51
+			; U = B+C+D+E+F = 2+4+8+16+32  = 62
+			; P = A+B+E+F+G = 1+2+16+32+64 = 115
 			;
 
 =57			C	= 57
-=51			P	= 51
+=115			P	= 115
 =62			U	= 62
 =0			BLNK	= 0
 
@@ -102,26 +102,56 @@
 			*	= $0200
 
 
-.0200	a5 7f		START:	LDA A_INIT	; Set the data direction bits
+.0200	a9 7f		START:	LDA #A_INIT	; Set the data direction bits
 .0202	8d 41 17		STA PADD
-.0205	a5 1e			LDA B_INIT
+.0205	a9 1e			LDA #B_INIT
 .0207	8d 43 17		STA PBDD
 
-.020a	a5 39		DISPLY:	LDA C
-.020c	85 08			STA LED1
-.020e	a5 33			LDA P
-.0210	85 0a			STA LED2
-.0212	a5 3e			LDA U
-.0214	85 0c			STA LED3
-.0216	a5 00			LDA BLNK
-.0218	85 0e			STA LED4
+.020a	a9 39		DSPLY:	LDA #C		; Disply "CPU_"
+.020c	8d 40 17		STA SAD
+.020f	a9 08			LDA #LED1
+.0211	8d 42 17		STA SBD
+.0214	20 5b 02		JSR DELAY
 
-.021a	a5 3e			LDA U
-.021c	85 10			STA LED5
-.021e	a5 33			LDA P
-.0220	85 10			STA LED5
+.0217	a9 73			LDA #P
+.0219	8d 40 17		STA SAD
+.021c	a9 0a			LDA #LED2
+.021e	8d 42 17		STA SBD
+.0221	20 5b 02		JSR DELAY
 
-.0222	4c 22 02	LOOP:	JMP LOOP	; Now just loop endlessly...
+.0224	a9 3e			LDA #U
+.0226	8d 40 17		STA SAD
+.0229	a9 0c			LDA #LED3
+.022b	8d 42 17		STA SBD
+.022e	20 5b 02		JSR DELAY
+
+.0231	a9 00			LDA #BLNK
+.0233	8d 40 17		STA SAD
+.0236	a9 0e			LDA #LED4
+.0238	8d 42 17		STA SBD
+.023b	20 5b 02		JSR DELAY
+
+.023e	a9 3e			LDA #U		; Disply "UP"
+.0240	8d 40 17		STA SAD
+.0243	a9 10			LDA #LED5
+.0245	8d 42 17		STA SBD
+.0248	20 5b 02		JSR DELAY
+
+.024b	a9 73			LDA #P
+.024d	8d 40 17		STA SAD
+.0250	a9 12			LDA #LED6
+.0252	8d 42 17		STA SBD
+.0255	20 5b 02		JSR DELAY
+
+.0258	4c 0a 02	FINSH:	JMP DSPLY	; Now do it again...
+
+.025b	a0 02		DELAY:	LDY #2		; Just a simple delay routine
+.025d	a2 ff			LDX #255
+.025f	ca		DLOOP:	DEX
+.0260	d0 fd			BNE DLOOP
+.0262	88			DEY
+.0263	d0 fa			BNE DLOOP
+.0265	60			RTS
 
 			.END
 
