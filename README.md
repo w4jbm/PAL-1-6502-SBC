@@ -40,6 +40,13 @@ I am powering mine off a metered and regulated variable power supply. At 6 volts
 The regulator gets pretty warm if I feed it 7 volts. Another quirky thing is that with (for example) serial going, I see the 0.26 amps at 6 volts but 0.29 amps at 7 volts. A voltage regulator data sheet can do a better job explaining linear regulators than I can, but I would not expect to see current change much just because the voltage fed to the regulator goes up a bit. (Normally it is the current demands of the circuit on the regulated side of the regulator that is the main driver of current consumption.)
 
 
+## cpu_up_kim
+
+This program is just tinkering with direct writes to the 6532 registers to drive the LED display to show the message "CPU UP" similar to what the old Heathkit 6800 trainers would display.
+
+It is minimalistic and brute force for simplicity. For example, you could save some space by writing both of the letters P one after another and the letters U one after another instead of seperately. Once you know the fourth location is blanked, you don't really need to blank it again and could move that step to some initialization code. Some of the code immediately before and after the delay subroutine call could be moved down into the subroutine itself. Those are things to work with if you're interested in messing with the code.
+
+
 ## proc_kim
 
 I have been testing some code that determines what type of processor a system is running (the original NMOS vs. the extended CMOS commands). I want to test it on the PAL-1, so this is mainly work-in-progress for now...
