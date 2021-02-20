@@ -4,11 +4,15 @@
 ;
 ; By Jim McClanahan, W4JBM, Feb 2021
 ;
+; This is not optimized at all. Some things could be moved into the
+; delay subroutine to reduce the size. This is total brute force and
+; direct writes to the control registers.
+;
 ; Build with:
 ; $ 64tass --intel-hex cpu_up_kim.a65 -o cpu_up_kim.hex -m --verbose-list -L cpu_up_kim.lst
 ; $ srec_cat cpu_up_kim.hex -intel -o cpu_up_kim.mos -MOS_Technologies
-;
-
+; $ unix2dos cpu_up_kim.mos
+; $ cp cpu_up_kim.mos ~
 ;
 ; The addresses of the 6530/6532 used to control the LED display:
 ;
@@ -72,6 +76,8 @@ LED4	= $0E
 LED5	= $10
 LED6	= $12
 
+LEDOFF	= $00
+
 ;
 ;        DECODER    PORT B
 ; POS  OUT  D C B A  INP
@@ -97,42 +103,58 @@ START:	LDA #A_INIT	; Set the data direction bits
 	STA PADD
 	LDA #B_INIT
 	STA PBDD
-	
-DSPLY:	LDA #C		; Disply "CPU_"
-	STA SAD
-	LDA #LED1
-	STA SBD
-	JSR DELAY
+
+; Display "CPU_"
+
+DSPLY:	LDA #C		; Load the pattern for the
+	STA SAD	;   seven segments...
+	LDA #LED1	; Load the pointer to the
+	STA SBD	;   right position..
+	JSR DELAY	; Pause a bit
+	LDA #LEDOFF	; Blank things before going
+	STA SBD	;   to the next one
 
 	LDA #P
 	STA SAD
 	LDA #LED2
 	STA SBD
 	JSR DELAY
+	LDA #LEDOFF
+	STA SBD
 	
 	LDA #U
 	STA SAD
 	LDA #LED3
 	STA SBD
 	JSR DELAY
+	LDA #LEDOFF
+	STA SBD
 	
 	LDA #BLNK
 	STA SAD
 	LDA #LED4
 	STA SBD
 	JSR DELAY
-	
-	LDA #U		; Disply "UP"
+	LDA #LEDOFF
+	STA SBD
+
+; Display "UP"
+
+	LDA #U
 	STA SAD
 	LDA #LED5
 	STA SBD
 	JSR DELAY
+	LDA #LEDOFF
+	STA SBD
 	
 	LDA #P
 	STA SAD
 	LDA #LED6
 	STA SBD
 	JSR DELAY
+	LDA #LEDOFF
+	STA SBD
 
 FINSH:	JMP DSPLY	; Now do it again...
 

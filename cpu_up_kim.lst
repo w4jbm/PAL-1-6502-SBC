@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex -o cpu_up_kim.hex -m --verbose-list -L cpu_up_kim.lst cpu_up_kim.a65
-; Sat Feb 13 12:27:52 2021
+; Sat Feb 20 13:44:16 2021
 
 ;Offset	;Hex		;Source
 
@@ -13,11 +13,15 @@
 			;
 			; By Jim McClanahan, W4JBM, Feb 2021
 			;
+			; This is not optimized at all. Some things could be moved into the
+			; delay subroutine to reduce the size. This is total brute force and
+			; direct writes to the control registers.
+			;
 			; Build with:
 			; $ 64tass --intel-hex cpu_up_kim.a65 -o cpu_up_kim.hex -m --verbose-list -L cpu_up_kim.lst
 			; $ srec_cat cpu_up_kim.hex -intel -o cpu_up_kim.mos -MOS_Technologies
-			;
-
+			; $ unix2dos cpu_up_kim.mos
+			; $ cp cpu_up_kim.mos ~
 			;
 			; The addresses of the 6530/6532 used to control the LED display:
 			;
@@ -81,6 +85,8 @@
 =$10			LED5	= $10
 =$12			LED6	= $12
 
+=$00			LEDOFF	= $00
+
 			;
 			;        DECODER    PORT B
 			; POS  OUT  D C B A  INP
@@ -107,51 +113,67 @@
 .0205	a9 1e			LDA #B_INIT
 .0207	8d 43 17		STA PBDD
 
-.020a	a9 39		DSPLY:	LDA #C		; Disply "CPU_"
-.020c	8d 40 17		STA SAD
-.020f	a9 08			LDA #LED1
-.0211	8d 42 17		STA SBD
-.0214	20 5b 02		JSR DELAY
+			; Display "CPU_"
 
-.0217	a9 73			LDA #P
-.0219	8d 40 17		STA SAD
-.021c	a9 0a			LDA #LED2
-.021e	8d 42 17		STA SBD
-.0221	20 5b 02		JSR DELAY
+.020a	a9 39		DSPLY:	LDA #C		; Load the pattern for the
+.020c	8d 40 17		STA SAD	;   seven segments...
+.020f	a9 08			LDA #LED1	; Load the pointer to the
+.0211	8d 42 17		STA SBD	;   right position..
+.0214	20 79 02		JSR DELAY	; Pause a bit
+.0217	a9 00			LDA #LEDOFF	; Blank things before going
+.0219	8d 42 17		STA SBD	;   to the next one
 
-.0224	a9 3e			LDA #U
-.0226	8d 40 17		STA SAD
-.0229	a9 0c			LDA #LED3
+.021c	a9 73			LDA #P
+.021e	8d 40 17		STA SAD
+.0221	a9 0a			LDA #LED2
+.0223	8d 42 17		STA SBD
+.0226	20 79 02		JSR DELAY
+.0229	a9 00			LDA #LEDOFF
 .022b	8d 42 17		STA SBD
-.022e	20 5b 02		JSR DELAY
 
-.0231	a9 00			LDA #BLNK
-.0233	8d 40 17		STA SAD
-.0236	a9 0e			LDA #LED4
-.0238	8d 42 17		STA SBD
-.023b	20 5b 02		JSR DELAY
+.022e	a9 3e			LDA #U
+.0230	8d 40 17		STA SAD
+.0233	a9 0c			LDA #LED3
+.0235	8d 42 17		STA SBD
+.0238	20 79 02		JSR DELAY
+.023b	a9 00			LDA #LEDOFF
+.023d	8d 42 17		STA SBD
 
-.023e	a9 3e			LDA #U		; Disply "UP"
-.0240	8d 40 17		STA SAD
-.0243	a9 10			LDA #LED5
-.0245	8d 42 17		STA SBD
-.0248	20 5b 02		JSR DELAY
+.0240	a9 00			LDA #BLNK
+.0242	8d 40 17		STA SAD
+.0245	a9 0e			LDA #LED4
+.0247	8d 42 17		STA SBD
+.024a	20 79 02		JSR DELAY
+.024d	a9 00			LDA #LEDOFF
+.024f	8d 42 17		STA SBD
 
-.024b	a9 73			LDA #P
-.024d	8d 40 17		STA SAD
-.0250	a9 12			LDA #LED6
-.0252	8d 42 17		STA SBD
-.0255	20 5b 02		JSR DELAY
+			; Display "UP"
 
-.0258	4c 0a 02	FINSH:	JMP DSPLY	; Now do it again...
+.0252	a9 3e			LDA #U
+.0254	8d 40 17		STA SAD
+.0257	a9 10			LDA #LED5
+.0259	8d 42 17		STA SBD
+.025c	20 79 02		JSR DELAY
+.025f	a9 00			LDA #LEDOFF
+.0261	8d 42 17		STA SBD
 
-.025b	a0 02		DELAY:	LDY #2		; Just a simple delay routine
-.025d	a2 ff			LDX #255
-.025f	ca		DLOOP:	DEX
-.0260	d0 fd			BNE DLOOP
-.0262	88			DEY
-.0263	d0 fa			BNE DLOOP
-.0265	60			RTS
+.0264	a9 73			LDA #P
+.0266	8d 40 17		STA SAD
+.0269	a9 12			LDA #LED6
+.026b	8d 42 17		STA SBD
+.026e	20 79 02		JSR DELAY
+.0271	a9 00			LDA #LEDOFF
+.0273	8d 42 17		STA SBD
+
+.0276	4c 0a 02	FINSH:	JMP DSPLY	; Now do it again...
+
+.0279	a0 02		DELAY:	LDY #2		; Just a simple delay routine
+.027b	a2 ff			LDX #255
+.027d	ca		DLOOP:	DEX
+.027e	d0 fd			BNE DLOOP
+.0280	88			DEY
+.0281	d0 fa			BNE DLOOP
+.0283	60			RTS
 
 			.END
 
