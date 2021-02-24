@@ -1,6 +1,6 @@
 # Building a Kim
 
-"...just give me at least some credit like 'Stolen from Ruud'"
+*"...just give me at least some credit like 'Stolen from Ruud'"*
 
 This is some information related to work by Ruud Baltissen in the Netherlands. This seems to be some of the first serious look at bulding a clone of the KIM-1 that used the more widely available 6532.
 
