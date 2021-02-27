@@ -23,7 +23,7 @@ srec_cat infile.hex -intel -o outfile.mos -MOS_Technologies
 unix2dos outfile.mos
 ```
 
-Once it is ready, you can get into the serial monitor. I have had to set fairly high delays (25 ms between characters and 250 ms after a carriage return) in my terminal program to get reliable transfers. Once you are ready, type the following:
+Once it is ready, you can get into the serial monitor. I have had to set fairly high delays (10 ms between characters and 250 ms after a carriage return) in my terminal program to get reliable transfers. Once you are ready, type the following:
 
 ```
 L (start load, begin transfer of file)
@@ -31,6 +31,15 @@ L (start load, begin transfer of file)
 xxxx<space bar> (type in the address where you want to begin execution)
 G (this starts running at the address you just entered)
 ```
+
+NOTE: While the delays may seem high, the original design was based on something like a teletype operating at 110 or 300 bps. On top of that, the paper tape format included NULL characters after each line to give things (both the teletype and the computer) a bit of time to catch up.
+
+
+## Tiny BASIC
+
+This is the version of Tiny Basic by Tom Pittman and available on Bob Applegate's website.
+
+I have patched it to handle the backspace key instead of using the underscore chracter. (It does not actually erase or delete the character on the screen, but you can backspace and then type over your error.)
 
 
 ## Power
