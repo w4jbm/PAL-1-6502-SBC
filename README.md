@@ -76,3 +76,36 @@ I have been testing some code that determines what type of processor a system is
 My kit has a UMC UM6502 which is an NMOS device that has the original behavior. The four bit "signiture" I gater is `$00 $B0 $FF $B4`. The second byte shows that the Z flag was not set after doing BCD addition of $99 + $01. The third byte shows that $1A acted as a NOP instead of an INC A which is the expected behavior from the older NMOS devices.
 
 I had to use X in the message routine because the A and Y registers are changed after calling OUTCH.
+
+
+## Srecord use and bug...
+
+I use s`rec_cat` a lot to convert things into the MOS Technologies punched tape format. You can make patches and then fix the checksums with something like:
+
+```
+$ srec_cat -ignore-checksum -line-length 41 prog.mos -MOS_Technologies -o prog.mos -MOS_Technologies
+```
+
+If you have a binary file, you can set a base address and convert it using:
+
+```
+$ srec_cat -line-length 41 prog.bin -Binary -offset 0x2000 -o prog.mos -MOS_Technologies
+```
+
+During development work, my assembler generates Intel hex files which can be converted using:
+```
+$ srec_cat -ignore-checksum -line-length 41 prog.hex -intel -o prog.mos -MOS_Technologies
+```
+
+You don't really need the `-line-length` option, but out of habit on the 6502 I would rather not have records that cross page boundaries. The KIM monitor handles things fine, but it's still something I tend to do.
+
+During all of this, I have found a bug in `srec_cat`. (I've used the program for a long time and it is generally incredibly solid.) The final record of a punch tape should indicate a length of zero, then have a four digit (hex) line count, and finish with a four digit (hex) checksum. On longer punch sessions, you might see something like `;0002520252` at the end of the `srec_cat` output with will yield this on the PAL-1/KIM:
+```
+;0002520252 ERR KIM
+```
+For up to 255 lines, you are fine. But the checksum is not being calculated--instead the line count is being repeated. The final line should actually read `;0002520054` where $0054 is the sum of the values of the bytes. Unforuntately `srec_cat` doesn't seem to be maintained (probably because it was so nearly bug free) so this is likely to be around for a while.
+
+
+
+
+
