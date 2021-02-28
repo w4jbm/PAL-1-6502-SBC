@@ -39,7 +39,20 @@ NOTE: While the delays may seem high, the original design was based on something
 
 This is the version of Tiny Basic by Tom Pittman and available on Bob Applegate's website.
 
-I have patched it to handle the backspace key instead of using the underscore chracter. (It does not actually erase or delete the character on the screen, but you can backspace and then type over your error.)
+I have patched it to handle the backspace key instead of using the underscore chracter. (It does not actually erase or delete the character on the screen, but you can backspace and then type over your error.) It also sets $F1 to $00 which will clear the decimal mode when you start the program.
+
+Cold start is at $0200 and warm start is at $0203.
+
+
+## Microsoft 9-Digit BASIC
+
+This is the 9-digit version of Microsoft BASIC for the 6502.
+
+It does set $F1 to $00 which will clear the decimal mode when you start the program. I have patched this to allow use of the backspace ($08) as well as the underscore ($5F). To do this, I hacked the code that previously allowed the BELL ($07) through as a valid character to intercept the backspace. (This means the bell is no longer treated as a valid input character.)
+
+I'm still try to get the patch for "Control-C" working. (Basically where pressing any key while a program is executing will interupt it--there is no 'buffer' for characters in the approach the KIM uses for serial communications.) I may also hack the need to enter a Y at the trig functions prompt since memory isn't really an issue.
+
+Initial startup is at $4065. After the initial start, there is a warm start jump at $0000.
 
 
 ## Power
