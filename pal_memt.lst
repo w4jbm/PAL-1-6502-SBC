@@ -1,0 +1,113 @@
+
+; 64tass Turbo Assembler Macro V1.55.2200 listing file
+; 64tass --intel-hex -o pal_memt.hex --verbose-list --list pal_memt.lst pal_memt.a65
+; Wed Mar  3 12:43:35 2021
+
+;Offset	;Hex		;Monitor	;Source
+
+;******  Processing input file: pal_memt.a65
+
+					; PAL-1 Memory Test
+					;
+					; Based on the program by Jim butterfield appearing
+					; in the August 1977 issue of Dr. Dobb's Journal.
+					;
+					; This version by Jim McClanahan W4JBM (March 2021)
+					;
+					; $ 64tass -a pal_memt.a65 -pal_memt.lst
+					;
+
+						* = 0
+
+					; We will use Page Zero and set things up for testing
+					; the 32K memory expansion board.
+
+>0000	20				BEGIN:	.BYTE $20	; Beginning page for test
+>0001	9f				END:	.BYTE $9F	; Ending page for test
+
+					; This is where the real work starts...
+
+.0002	a9 00		lda #$00	START:	LDA #0		; Zero out...
+.0004	a8		tay			TAY
+.0005	85 fa		sta $fa			STA POINTL	; ...low byte of address
+.0007	85 70		sta $70		BIGLP:	STA FLAG	; =$00 first pass, =$FF second
+.0009	a2 02		ldx #$02		LDX #2
+.000b	86 72		stx $72			STX MOD	; Three tests in major loop
+.000d	a5 00		lda $00		PASS:	LDA BEGIN	; Set pointer to...
+.000f	85 fb		sta $fb			STA POINTH	; ...start of test area
+.0011	a6 01		ldx $01			LDX END
+.0013	a5 70		lda $70			LDA FLAG
+.0015	49 ff		eor #$ff		EOR #$FF	; Flip bits in FLAG
+.0017	85 71		sta $71			STA FLIP	; =$FF first pass, =$00 second
+.0019	91 fa		sta ($fa),y	CLEAR:	STA (POINTL),Y	; Now write the value...
+.001b	c8		iny			INY		; ...into all locations
+.001c	d0 fb		bne $0019		BNE CLEAR
+.001e	e6 fb		inc $fb			INC POINTH	; Go to the next page...
+.0020	e4 fb		cpx $fb			CPX POINTH
+.0022	b0 f5		bcs $0019		BCS CLEAR
+
+					; FLIP is in all locations, now change every 3rd location
+
+.0024	a6 72		ldx $72			LDX MOD
+.0026	a5 00		lda $00			LDA BEGIN	; Set the pointer...
+.0028	85 fb		sta $fb			STA POINTH	; ...back to the start
+.002a	a5 70		lda $70		FILL:	LDA FLAG	; Change the value
+.002c	ca		dex		TOP:	DEX
+.002d	10 04		bpl $0033		BPL SKIP	; Skip 1st and 2nd locations
+.002f	a2 02		ldx #$02		LDX #2		; Restore the counter
+.0031	91 fa		sta ($fa),y		STA (POINTL),Y	; And change the 3rd location
+.0033	c8		iny		SKIP:	INY
+.0034	d0 f6		bne $002c		BNE TOP	; Do for the rest of current page
+.0036	e6 fb		inc $fb			INC POINTH	; Then go to next page
+.0038	a5 01		lda $01			LDA END
+.003a	c5 fb		cmp $fb			CMP POINTH	; Check if we are at end of test area
+.003c	b0 ec		bcs $002a		BCS FILL	; If not, keep filling
+
+					; Memory has been set up, now let's see if it reads back
+					; with the right values
+
+.003e	a5 00		lda $00			LDA BEGIN	; Reset the pointers
+.0040	85 fb		sta $fb			STA POINTH
+.0042	a6 72		ldx $72			LDX MOD	; Synchronize 1-in-3 counter
+.0044	a5 71		lda $71		POP:	LDA FLIP	; We will test for FLIP value...
+.0046	ca		dex			DEX		; ...2 out of 3 times
+.0047	10 04		bpl $004d		BPL SLIP	;    - else -
+.0049	a2 02		ldx #$02		LDX #2		; Reset the 3-counter...
+.004b	a5 70		lda $70			LDA FLAG	; ...and test for FLAG value
+.004d	d1 fa		cmp ($fa),y	SLIP	CMP (POINTL),Y	; Make the test
+.004f	d0 15		bne $0066		BNE OUT	; Branch if it Failed
+.0051	c8		iny			INY
+.0052	d0 f0		bne $0044		BNE POP	; Loop through current page...
+.0054	e6 fb		inc $fb			INC POINTH	; ...then go to next page.
+.0056	a5 01		lda $01			LDA END
+.0058	c5 fb		cmp $fb			CMP POINTH	; Are we at the end?
+.005a	b0 e8		bcs $0044		BCS POP	; If not, keep going!
+
+					; If the tests went OK, change up for next text and repeat
+
+.005c	c6 72		dec $72			DEC MOD	; Change 1 in 3 position
+.005e	10 ad		bpl $000d		BPL PASS	; and test the next third of memory
+.0060	a5 70		lda $70			LDA FLAG	; Invert FLAG...
+.0062	49 ff		eor #$ff		EOR #$FF	; ...for Part 2
+.0064	30 a1		bmi $0007		BMI BIGLP
+.0066	84 fa		sty $fa		OUT	STY POINTL	; Low order adds to display...
+.0068	4c 4f 1c	jmp $1c4f		JMP KMON	; ...and exit to KIM
+
+					; Define some locations we will use...
+
+=$70					FLAG	= $70
+=$71					FLIP	= $71
+=$72					MOD	= $72
+
+					; Some Page Zero addresses the KIM Monitor uses and
+					; we will share...
+
+=$fa					POINTL	= $FA
+=$fb					POINTH	= $FB
+
+					; And the location to restart the KIM's Monitor
+
+=$1c4f					KMON	= $1C4F
+
+
+;******  End of listing

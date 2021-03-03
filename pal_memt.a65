@@ -1,0 +1,104 @@
+; PAL-1 Memory Test
+;
+; Based on the program by Jim butterfield appearing
+; in the August 1977 issue of Dr. Dobb's Journal.
+;
+; This version by Jim McClanahan W4JBM (March 2021)
+;
+; $ 64tass --intel-hex pal_memt.a65 -o pal_memt.hex --verbose-list --list pal_memt.lst
+; $ srec_cat pal_memt.hex -intel -o pal_memt.mos --MOS-technologies
+; $ unix2dos pal_memt.mos
+;
+
+	* = 0
+
+; We will use Page Zero and set things up for testing
+; the 32K memory expansion board.
+
+BEGIN:	.BYTE $20	; Beginning page for test
+END:	.BYTE $9F	; Ending page for test
+
+; This is where the real work starts...
+
+START:	LDA #0		; Zero out...
+	TAY
+	STA POINTL	; ...low byte of address
+BIGLP:	STA FLAG	; =$00 first pass, =$FF second
+	LDX #2
+	STX MOD	; Three tests in major loop
+PASS:	LDA BEGIN	; Set pointer to...
+	STA POINTH	; ...start of test area
+	LDX END
+	LDA FLAG
+	EOR #$FF	; Flip bits in FLAG
+	STA FLIP	; =$FF first pass, =$00 second
+CLEAR:	STA (POINTL),Y	; Now write the value...
+	INY		; ...into all locations
+	BNE CLEAR
+	INC POINTH	; Go to the next page...
+	CPX POINTH
+	BCS CLEAR
+
+; FLIP is in all locations, now change every 3rd location
+
+	LDX MOD
+	LDA BEGIN	; Set the pointer...
+	STA POINTH	; ...back to the start
+FILL:	LDA FLAG	; Change the value
+TOP:	DEX
+	BPL SKIP	; Skip 1st and 2nd locations
+	LDX #2		; Restore the counter
+	STA (POINTL),Y	; And change the 3rd location
+SKIP:	INY
+	BNE TOP	; Do for the rest of current page
+	INC POINTH	; Then go to next page
+	LDA END
+	CMP POINTH	; Check if we are at end of test area
+	BCS FILL	; If not, keep filling
+
+; Memory has been set up, now let's see if it reads back
+; with the right values
+
+	LDA BEGIN	; Reset the pointers
+	STA POINTH
+	LDX MOD	; Synchronize 1-in-3 counter
+POP:	LDA FLIP	; We will test for FLIP value...
+	DEX		; ...2 out of 3 times
+	BPL SLIP	;    - else -
+	LDX #2		; Reset the 3-counter...
+	LDA FLAG	; ...and test for FLAG value
+SLIP	CMP (POINTL),Y	; Make the test
+	BNE OUT	; Branch if it Failed
+	INY
+	BNE POP	; Loop through current page...
+	INC POINTH	; ...then go to next page.
+	LDA END
+	CMP POINTH	; Are we at the end?
+	BCS POP	; If not, keep going!
+
+; If the tests went OK, change up for next text and repeat
+
+	DEC MOD	; Change 1 in 3 position
+	BPL PASS	; and test the next third of memory
+	LDA FLAG	; Invert FLAG...
+	EOR #$FF	; ...for Part 2
+	BMI BIGLP
+OUT	STY POINTL	; Low order adds to display...
+	JMP KMON	; ...and exit to KIM
+
+; Define some locations we will use...
+
+FLAG	= $70
+FLIP	= $71
+MOD	= $72	
+
+; Some Page Zero addresses the KIM Monitor uses and
+; we will share...
+
+POINTL	= $FA
+POINTH	= $FB
+
+; And the location to restart the KIM's Monitor
+
+KMON	= $1C4F
+
