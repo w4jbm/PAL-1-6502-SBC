@@ -35,7 +35,7 @@ G (this starts running at the address you just entered)
 NOTE: While the delays may seem high, the original design was based on something like a teletype operating at 110 or 300 bps. On top of that, the paper tape format included NULL characters after each line to give things (both the teletype and the computer) a bit of time to catch up.
 
 
-## Memory Test
+## Memory Test (pal_memt)
 
 People who didn't experience the computers of the 1970s and early 1980s probably don't fully appreciate how import memory tests were at that time. A computer could have dozens upon dozens of memory chips and some inevitably were operating on the boarderline in terms of speed. Things like delay lines (I hate those things...) were necessary for some designs using dynamic memory. Static memory was less painful to work with, but still had it's share of quirks.
 
