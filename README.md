@@ -35,6 +35,33 @@ G (this starts running at the address you just entered)
 NOTE: While the delays may seem high, the original design was based on something like a teletype operating at 110 or 300 bps. On top of that, the paper tape format included NULL characters after each line to give things (both the teletype and the computer) a bit of time to catch up.
 
 
+## Memory Test
+
+People who didn't experience the computers of the 1970s and early 1980s probably don't fully appreciate how import memory tests were at that time. A computer could have dozens upon dozens of memory chips and some inevitably were operating on the boarderline in terms of speed. Things like delay lines (I hate those things...) were necessary for some designs using dynamic memory. Static memory was less painful to work with, but still had it's share of quirks.
+
+When I first put together the PAL-1's 32K memory expansion and the expansion bus, I wanted a way to do a stress test on things. With a 1 MHz processor, you can get away with a lot and I didn't expect to find anything. But knowing that the memory had gone through some type of test gave me some peace of mind.
+
+I am sharing Jim Butterfield's memory test program which appeared in the August 1977 edition of Dr. Dobbs Journal of Computer Calistenics & Orthodontia. It uses an alorigthm developed by Knaizuk and Hartmann (IEEE Transactions on Computers, April 1977) and takes under ten seconds to test the 32K expansion board.
+
+You can load the program in memory using the L command from the monitor. Then go to $0002 (0-0-0-2-space) and press G to execute it.
+
+Memory testing is a combination of art and science. You can't just write, for example, all $FFs to memory and see if it takes them. Sometimes writing to one address may result in the value of another address changing. A lot of thought goes into the paterns used and they look for simple things like an individual bit stuck-at-1 or stuck-at-0, but also take into account how failures beyond the memory itself (like the address lines or the address decoders) might manifest themselves.
+
+This program is fairly straight forward
+
+- $FF is stored in every location in the test range
+- $00 is then stored in every third location (giving a pattern of FF FF 00 FF FF 00 ...)
+- Memory is tested to make sure each location has the expected value
+- The location of the $00 is shifted by one two times, with the above test completed
+- Then the entire test is run yet again with the values of $FF and $00 swapped
+
+The test range is set from Page $20 to Page $9F (or from $2000 through $9FFF). If something goes wrong, it will dump you back to the serial monitor and the address location of the error will be displayed. The most likely outcome will be that the memory passes the test, in which case you will be dumped back into the monitor and an address of the the last location tested plus one (in our case $A000) will be displayed.
+
+You can test other ranges of memory by changing $0000 to the starting memory page and $0001 to the ending memory page. You can't test Page Zero (since the program and variables are stored there) and obviously you can't test areas where there isn't memory.
+
+'Back in the day...' we used to have memory tests that would run for hours on end watching for intermittent errors or errors that only occurred as a machine warmed up over the span of several hours. These days you are more likely to maybe find something like a solder bridge between two address lines that causes memory errors.
+
+
 ## Tiny BASIC
 
 This is the version of Tiny Basic by Tom Pittman and available on Bob Applegate's website.
@@ -103,9 +130,6 @@ During all of this, I have found a bug in `srec_cat`. (I've used the program for
 ```
 ;0002520252 ERR KIM
 ```
-For up to 255 lines, you are fine. But the checksum is not being calculated--instead the line count is being repeated. The final line should actually read `;0002520054` where $0054 is the sum of the values of the bytes. Unforuntately `srec_cat` doesn't seem to be maintained (probably because it was so nearly bug free) so this is likely to be around for a while.
+For up to 255 lines, you are fine. But the checksum is not being calculated--instead the line count is being repeated. The final line should actually read `;0002520054` where $0054 is the sum of the values of the bytes.
 
-
-
-
-
+**NOTE:** I have heard from Scott who maintains `srec_cat` and provided him with the details of what is going on. (There actually seems to be another "quirk" where some lines are dumped with 16 bytes of data instead of 24 bytes.) From looking at the source code, I believe the original code thought the line count was repeated twice.
