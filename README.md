@@ -62,6 +62,23 @@ You can test other ranges of memory by changing $0000 to the starting memory pag
 'Back in the day...' we used to have memory tests that would run for hours on end watching for intermittent errors or errors that only occurred as a machine warmed up over the span of several hours. These days you are more likely to maybe find something like a solder bridge between two address lines that causes memory errors.
 
 
+## FIG FORTH (pal_figforth)
+
+This is still work in progress! I struggled with the raw 6502 version of FIG FORTH, but found this version that had been first tweaked for Vince Briel's Apple 1 clone and then for his Micro-KIM clone.
+
+It did not handle line feeds properly and I moved it over to 64tass and have hacked in a few changes. At this point it seems to work, but I still need to clean up the source code. But I thought there might be some interest, so I'm posting it "as-is" for now.
+
+From the monitor, do a "L" to load pal_figforth.pun. Then make sure $F1 is loaded with $00, go to $2300, and press "G" to execute it. If you don't use Forth much, try:
+```
+2 2 + .
+```
+This pushes 2 and 2 onto the stack, adds them, and displays the result. Or you can try the following:
+```
+: HELLO ." Hello, World!" CR ;
+```
+Watch the spaces! If you get it right, this defines a `HELLO` command that you can now execute by typing at the command line.
+
+
 ## Tiny BASIC
 
 This is the version of Tiny Basic by Tom Pittman and available on Bob Applegate's website.
