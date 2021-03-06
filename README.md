@@ -79,6 +79,13 @@ This pushes 2 and 2 onto the stack, adds them, and displays the result. Or you c
 Watch the spaces! If you get it right, this defines a `HELLO` command that you can now execute by typing at the command line.
 
 
+## JMON by Jeff Tranter
+
+This is a fairly complete monitor for the 6502. I am still working through some display quirks on the PAL-1/KIM. The KIM echos all input keys, so if you use ESCape to quit a listing, that gets sent to the terminal. Minicom (and I would assume other terminal programs) don't like that. (I send a space and carrage return to finish out a dummy escape sequence for now.)
+
+Some of the other parts of displays are a bit off. For some reason, the code only sends CRs as the newline. I'm adding LFs, but I know there is still work to do in the area of displaying registers. Over time, I'll go through all the cammands to make sure they work like they should. Eventually I'll probably have four version--one for $2000 and one for the top of memory, and then flavors of both with and without the assembler (which doubles the size of things). Having something like this earlier in my troubleshooting of Forth would have helped a lot, but I need it to be out of the way of where Forth loads (at $2000 like many things that use expanded memory on the KIM).
+
+
 ## Tiny BASIC
 
 This is the version of Tiny Basic by Tom Pittman and available on Bob Applegate's website.
