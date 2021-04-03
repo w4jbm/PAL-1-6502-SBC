@@ -16,7 +16,7 @@ The connector that came with mine is a male DB-9. Most USB serial interfaces (or
 The PAL-1 (just like the KIM-1) uses a 'soft UART' or 'bit banger' for its serial I/O. I'm not a fan of this approach, but at the same time it demonstrates what could be accomplished with a minimial amount of hardware. The PAL-1 automatically figures out the appropriate delay between bits of the serial character when you press enter after a reboot. I have found that decreasing the value actually significantly improves the odds of an error-free load of larger punchtape format files. Below is a table for values found and suggest for $17F2.
 
 | Baud | Found | New |
-|------|-------|-----|
+|-----:|------:|----:|
 |   300|    $EA|  $E8|
 | 1,200|    $37|  $35|
 | 2,400|    $1A|  $18|
