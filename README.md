@@ -13,6 +13,17 @@ It seems to be based on Vince Briel's [Micro-KIM](http://www.brielcomputers.com/
 
 The connector that came with mine is a male DB-9. Most USB serial interfaces (or interfaces on older computers) are also male DB-9 wired as the DTE device. The PAL-1 has the pinout of a DCE, which would normally have a female DB-9 connector. To get things connected, I used a "gender changer" (DB-9 female-to-female with pins 2, 3, and 5 connected straigt through).
 
+The PAL-1 (just like the KIM-1) uses a 'soft UART' or 'bit banger' for its serial I/O. I'm not a fan of this approach, but at the same time it demonstrates what could be accomplished with a minimial amount of hardware. The PAL-1 automatically figures out the appropriate delay between bits of the serial character when you press enter after a reboot. I have found that decreasing the value actually significantly improves the odds of an error-free load of larger punchtape format files. Below is a table for values found and suggest for $17F2.
+
+| Baud | Found | New |
+|------|-------|-----|
+|   300|    $EA|  $E8|
+| 1,200|    $37|  $35|
+| 2,400|    $1A|  $18|
+| 4,800|    $0B|  $0A|
+
+I haven't tried to optimize the delay values. Right now I'm using 5 ms between characters and 500 ms between lines when doing 8K transfers and with the modified values I usually am successful. With the default values, it seemed like even with longer delays things would slip out of synchronization at some point more often than not on large transfers.
+
 
 ## Loading Hex Files
 
