@@ -68,7 +68,8 @@ START:     JMP START2        ; We have a small vector table at the start...
 ;
 ; Print the welcome message, the prompt, and get the user input...
 ;
-START2:    LDA #<MSG1
+START2:    CLD
+           LDA #<MSG1
            STA SADDR+0
            LDA #>MSG1
            STA SADDR+1
