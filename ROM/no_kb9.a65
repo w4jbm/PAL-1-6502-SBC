@@ -1,0 +1,21 @@
+; This file is just a dummy file that replaces the
+; one containing BASIC. It is used for testing and
+; development only.
+;
+; It prints a message and returns to the loader's
+; start.
+
+basic_start:
+
+           LDA #<NO_BAS
+           STA SADDR+0
+           LDA #>NO_BAS
+           STA SADDR+1
+           JSR SHWMSG
+
+           JMP START
+
+NO_BAS:    .null CR,LF,"BASIC is not available.",CR,LF
+
+basic_finish:
+

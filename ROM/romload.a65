@@ -10,11 +10,16 @@
 ;
 ; For tests when built at $6000, use:
 ; $ srec_cat romload.hex -intel -o romload.mos -MOS_Technologies -CRLF
+; $ cp romload.mos ~
 ;
 ; For EPROM image when built at $A000, use:
 ; $ cp romload.hex romload.org
 ; $ srec_cat romload.org -intel -offset -0xA000 -o romload.hex -intel -CRLF
-
+;
+; Known Issues:
+;  - The way the end address is determined actually copies one extra byte from
+;    ROM because the end address is actually set to the next empty location
+;    (not the last filled location).
 ;
 ; Define the KIM ROM routines we will use...
 ;
@@ -45,6 +50,11 @@ CR         = $0D
 LF         = $0A
 
 ;
+; PAL-1/KIM Hardware addresses used
+;
+SBD        = $1742           ; PAL-1 RIOT B Data Register
+
+;
 ; We will be entering from the monitor, so we can assume that the stack
 ; and other items have been initialized as needed.
 ;
@@ -66,9 +76,12 @@ START:     JMP START2        ; We have a small vector table at the start...
            JMP xStart        ; Future entry
 
 ;
-; Print the welcome message, the prompt, and get the user input...
+; Set things up, print the welcome message, print the prompt,
+; and get the user input...
 ;
-START2:    CLD
+START2:	   CLD
+           LDX #$FF	; Set up stack
+	   TXS
            LDA #<MSG1
            STA SADDR+0
            LDA #>MSG1
@@ -127,7 +140,7 @@ LOAD_B:    LDA #<MSG3       ; If so, print message
 ; ROM into RAM and start it. Otherwise skip around this.
 ;
 CHK_F:     CMP #"F"          ; Start Forth?
-           BNE CHK_X
+           BNE CHK_Z
 
 LOAD_F:    LDA #<MSG4        ; If so, print message
            STA SADDR+0
@@ -157,6 +170,15 @@ LOAD_F:    LDA #<MSG4        ; If so, print message
            CLD               ; Make sure we aren't in DEC mode
 
            JMP $2300         ; And start FORTH
+
+;
+; Check to see if a 'Z' was typed. If so, start the eWoz
+; Monitor. If not, skip around this
+;
+CHK_Z:     CMP #"Z"          ; Start eWoz?
+           BNE CHK_X         ; If not, check for Exit
+
+           JMP RESET
 
 ;
 ; Check to see if an'X' was typed. If so, exit back to the
@@ -197,6 +219,44 @@ _NoInc1:   INC DADDR+0       ; And increment the Destination (16 bits)
 _NoInc2:   JMP _COPY2
 
 ;
+; GetKey - Fetches character from keyboard and returns
+;          character in Accumulator
+;
+; This uses trickery to avoid the echo that usually
+; is done in hardware by the PAL-1 and KIM.
+;
+; Y register is preserved because it is used as the buffer
+; pointer by eWoz.
+;
+GetKey:    TYA               ; Save Y
+           STA SADDR+1
+           LDA SBD           ; Get the RIOT register
+           AND #$FE          ; Mask out low bit
+           STA SBD
+           JSR $1E5A         ; Call KIM GETCH routine. Returns char in A. Changes Y.
+           STA SADDR+0       ; Save A
+           LDA SBD           ; Get the RIOT register
+           ORA #1            ; Mask in low bit
+           STA SBD           ; And store it
+           LDA SADDR+1       ; Restore Y
+           TAY
+           LDA SADDR+0       ; Restore A
+           RTS
+
+;
+; OUTCRLF will display a carriage return and line feed
+;
+OUTCRLF:   TYA               ; Save Y
+           STA SADDR+1
+           LDA #CR           ; Load Carriage Return and print
+           JSR XOutch
+           LDA #LF           ; Load Line Feed and print
+           JSR XOutch
+           LDA SADDR+1       ; Restore Y
+           TAY
+           RTS
+
+;
 ; SHWMSG will display a null delimited string to the console.
 ;
 SHWMSG:    LDY #0            ; Show message subroutine
@@ -214,13 +274,30 @@ DONE:	   RTS               ; Jump here to return at end-of-string
 ; Messages to display...
 ;
 MSG1:      .null CR,LF,"PAL-1 ROM Loader v1.0",CR,LF
-MSG2:      .null CR,LF,"(B)ASIC, (F)ORTH, or e(X)it? "
+MSG2:      .null CR,LF,"(B)ASIC, (F)ORTH, eWo(z) Monitor, or e(X)it? "
 MSG3:      .null CR,LF,"Starting MS BASIC...",CR,LF
 MSG4:      .null CR,LF,"Starting FIG FORTH...",CR,LF
+
+;
+; Load eWoz Monitor
+;
+.include "ewoz.a65"
 
 ;
 ; Files containing the images of the programs available
 ;
 .include "kb9.a65"
 .include "ff.a65"
+
+;
+; The following files are dummy files used while working
+; to get eWoz running. They are not needed and cannot be
+; included in a final working version.
+;
+; Note that there is no logic yet to change jump vectors
+; if you try to start BASIC or FORTH so you will end up
+; jumping into what could be garbage.
+;
+;.include "no_kb9.a65"
+;.include "no_ff.a65"
 
