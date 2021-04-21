@@ -337,7 +337,7 @@ DONE2:	AND #$0F
 	RTS
 
 ; Messages (null terminated)
-WLCMSG:	.NULL CR,LF,"Welcome to EWoz 1.0P",CR,LF
+WLCMSG:	.NULL CR,LF,"Welcome to eWoz 1.0P",CR,LF
 WMSG2:	.NULL CR,LF,"Start Intel Hex Transfer.",CR,LF
 WMSG3:	.NULL CR,LF,"Intel Hex Imported OK.",CR,LF
 WMSG4:	.NULL CR,LF,"Intel Hex Encountered Checksum Error.",CR,LF
