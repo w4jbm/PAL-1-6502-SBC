@@ -3,18 +3,20 @@
 
 This work is related to a ROM board which has 16K of memory mapped at $A000. I am using a 27C256, so the EPROM itself holds 32K. A15 can be tied high or low to select one of two "banks" of memory.
 
-Please not that this is still work in progress and may be broken in places. (I know that A13 needs to be inverted which is not on the schematic markup yet.)
+The best way to get started to is to read the manual included here in PDF format. A kit for the PAL-1 EPROM card is available on [Tindie](http://www.tindie.com/products/tkoak/pal-1-rom-expansion-kit/) from Liu Ganning. The software itself is available here if you want to build your own ROM card from scratch (I did the development on a protoboard version) along with the source and enough documentation where you should be able to build your own customer EPROM images if you wish.
 
 
-## ROM Loader
+## Bank 0 ROM Loader
 
-The ROM Loader program is a simple front-end that was originally designed to let you copy 'files' off the ROM and down into memory. When you power up the PAL-1, you will need to type "A000<space>G" to execute the program on the EPROM. At that point you will see a message like this:
+
+The ROM Loader program is a simple front-end that was originally designed to let you copy 'files' off the ROM and down into memory. When you power up the PAL-1, you will need to type `A000<space>G` to execute the program on the EPROM. At that point you will see a message like this:
 
 ```
 PAL-1 ROM Loader v1.0
 
 (B)ASIC, (F)ORTH, eWo(z) Monitor, or e(X)it? _
 ```
+
 Typing 'B' will move the widely used copy of Microsoft 9 digit BASIC down to $2000 and start it.
 
 Typing 'F' will move a version of FIG Forth down to $2300 and start it.
@@ -36,11 +38,16 @@ The BASIC and Forth versions loaded are converted to hex data that is included d
 I was asked about "relocating" the BASIC into the ROM space so it didn't have to be loaded into RAM. This would allow more free RAM to be available for use. Unfortunately there are parts of the KIM's BASIC that are self-modifying, so relocation to ROM isn't really possible. At some point I might implement a BASIC in ROM, but there is a lot (by 1970s standard) of RAM left even with loading BASIC into RAM. (If you are skeptical, please give it a try--I've found that what was most limiting was the time it took to load the BASIC interpreter which is now nearly instantaneous. I haven't come close to running out of program memory.)
 
 
-## Future Plans
+## Bank 1 Programs
+  
+Bank 1 has the following programs at the noted start address
 
-I am currently working on a heavily modified version of Jeff Tranter's JMON program that I have been calling PBUG (short for PAL BUG and rhymes with debug).
-
-I also plan to build a BASIC in ROM based on either EhBASIC or Microsoft BASIC at some point.
+Program | Address
+---|--:
+Apple 1 Integer BASIC | $A000
+eWoz Monitor | $B000
+PBUG Monitor | $B400
+VTL-02 | $D800
 
 
 ## Reporting Bugs or Requesting Features
