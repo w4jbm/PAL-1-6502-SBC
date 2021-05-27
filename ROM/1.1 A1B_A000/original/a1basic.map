@@ -1,0 +1,63 @@
+Modules list:
+-------------
+a1basic.o:
+    CODE              Offs=000000  Size=001000  Align=00001  Fill=0000
+    RODATA            Offs=000000  Size=000000  Align=00001  Fill=0000
+    BSS               Offs=000000  Size=000000  Align=00001  Fill=0000
+    DATA              Offs=000000  Size=000000  Align=00001  Fill=0000
+    ZEROPAGE          Offs=000000  Size=000000  Align=00001  Fill=0000
+    NULL              Offs=000000  Size=000000  Align=00001  Fill=0000
+
+
+Segment list:
+-------------
+Name                   Start     End    Size  Align
+----------------------------------------------------
+NULL                  000000  000000  000000  00001
+ZEROPAGE              000080  000080  000000  00001
+CODE                  001000  001FFF  001000  00001
+BSS                   002000  002000  000000  00001
+DATA                  002000  002000  000000  00001
+RODATA                002000  002000  000000  00001
+
+
+Exports list by name:
+---------------------
+START                     008000  LA    __BSS_LOAD__              002000  LA    
+__BSS_RUN__               002000  LA    __BSS_SIZE__              000000  EA    
+__STACKSIZE__             000800 REA    __STACKSTART__            008000 REA    
+__ZPSTART__               000080 REA    __ZP_FILEOFFS__           000000  EA    
+__ZP_LAST__               000080  LA    __ZP_SIZE__               00001F  EA    
+__ZP_START__              000080  LA    warm                      0082B3  LA    
+
+
+
+Exports list by value:
+----------------------
+__BSS_SIZE__              000000  EA    __ZP_FILEOFFS__           000000  EA    
+__ZP_SIZE__               00001F  EA    __ZPSTART__               000080 REA    
+__ZP_LAST__               000080  LA    __ZP_START__              000080  LA    
+__STACKSIZE__             000800 REA    __BSS_LOAD__              002000  LA    
+__BSS_RUN__               002000  LA    START                     008000  LA    
+__STACKSTART__            008000 REA    warm                      0082B3  LA    
+
+
+
+Imports list:
+-------------
+START (a1basic.o):
+__BSS_LOAD__ ([linker generated]):
+__BSS_RUN__ ([linker generated]):
+__BSS_SIZE__ ([linker generated]):
+__STACKSIZE__ ([linker generated]):
+    [linker generated]        /usr/share/cc65/cfg/none.cfg(11)
+__STACKSTART__ ([linker generated]):
+    [linker generated]        /usr/share/cc65/cfg/none.cfg(11)
+__ZPSTART__ ([linker generated]):
+    [linker generated]        /usr/share/cc65/cfg/none.cfg(10)
+__ZP_FILEOFFS__ ([linker generated]):
+__ZP_LAST__ ([linker generated]):
+__ZP_SIZE__ ([linker generated]):
+__ZP_START__ ([linker generated]):
+warm (a1basic.o):
+

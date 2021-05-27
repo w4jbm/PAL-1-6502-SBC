@@ -1,0 +1,2151 @@
+ca65 V2.18 - Ubuntu 2.18-1
+Main file   : a1basic.s
+Current file: a1basic.s
+
+000000r 1               ; Apple 1 BASIC
+000000r 1               ;
+000000r 1               ; Modifications to build with CC65 by Jeff Tranter <tranter@pobox.com>
+000000r 1               ;
+000000r 1               ; Apple 1 BASIC was written by Steve Wozniak
+000000r 1               ; Uses disassembly copyright 2003 Eric Smith <eric@brouhaha.com>
+000000r 1               ; http://www.brouhaha.com/~eric/retrocomputing/apple/apple1/basic/
+000000r 1               
+000000r 1               Z1d     =       $1D
+000000r 1               ch      =       $24     ; horizontal cursor location
+000000r 1               var     =       $48
+000000r 1               lomem   =       $4A     ; lower limit of memory used by BASIC (2 bytes)
+000000r 1               himem   =       $4C     ; upper limit of memory used by BASIC (2 bytes)
+000000r 1               rnd     =       $4E     ; random number (2 bytes)
+000000r 1               
+000000r 1               ; The noun stack and syntax stack appear to overlap, which is OK since
+000000r 1               ; they apparently are not used simultaneously.
+000000r 1               
+000000r 1               ; The noun stack size appears to be 32 entries, based on LDX #$20
+000000r 1               ; instruction at e67f.  However, there seems to be enough room for
+000000r 1               ; another 8 entries.  The noun stack builds down from noun_stk_<part>+$1f
+000000r 1               ; to noun_stk_<part>+$00, indexed by the X register.
+000000r 1               
+000000r 1               ; Noun stack usage appears to be:
+000000r 1               ;   integer:
+000000r 1               ;       (noun_stk_h_int,noun_stk_l) = value
+000000r 1               ;       noun_stk_h_str = 0
+000000r 1               ;   string:
+000000r 1               ;       (noun_stk_h_str,noun_stk_l) = pointer to string
+000000r 1               ;       noun_stk_h_int = any
+000000r 1               ; Since noun_stk_h_str determines whether stack entry is integer or string,
+000000r 1               ; strings can't start in zero page.
+000000r 1               
+000000r 1               noun_stk_l =    $50
+000000r 1               syn_stk_h =     $58     ; through $77
+000000r 1               noun_stk_h_str = $78
+000000r 1               syn_stk_l  =    $80     ; through $9F
+000000r 1               noun_stk_h_int = $A0
+000000r 1               txtndxstk  =    $A8     ; through $C7
+000000r 1               text_index =    $C8     ; index into text being tokenized (in buffer at $0200)
+000000r 1               leadbl  =       $C9     ; leading blanks
+000000r 1               pp      =       $CA     ; pointer to end of program (2 bytes)
+000000r 1               pv      =       $CC     ; pointer to end of variable storage (2 bytes)
+000000r 1               acc     =       $CE     ; (2 bytes)
+000000r 1               srch    =       $D0
+000000r 1               tokndxstk =     $D1
+000000r 1               srch2   =       $D2
+000000r 1               if_flag =       $D4
+000000r 1               cr_flag =       $D5
+000000r 1               current_verb =  $D6
+000000r 1               precedence =    $D7
+000000r 1               x_save  =       $D8
+000000r 1               run_flag =      $D9
+000000r 1               aux     =       $DA
+000000r 1               pline   =       $DC     ; pointer to current program line (2 bytes)
+000000r 1               pverb   =       $E0     ; pointer to current verb (2 bytes)
+000000r 1               p1      =       $E2
+000000r 1               p2      =       $E4
+000000r 1               p3      =       $E6
+000000r 1               token_index =   $F1    ; pointer used to write tokens into buffer  2 bytes)
+000000r 1               pcon    =       $F2    ; temp used in decimal output (2 bytes)
+000000r 1               auto_inc =      $F4
+000000r 1               auto_ln =       $F6
+000000r 1               auto_flag =     $F8
+000000r 1               char    =       $F9
+000000r 1               leadzr  =       $FA
+000000r 1               for_nest_count = $FB    ; count of active (nested) FOR loops
+000000r 1               gosub_nest_count = $FC  ; count of active (nested) subroutines calls (GOSUB)
+000000r 1               synstkdx =      $FD
+000000r 1               synpag  =       $FE
+000000r 1               
+000000r 1               ; GOSUB stack, max eight entries
+000000r 1               ; note that the Apple II version has sixteen entries
+000000r 1               gstk_pverbl     =       $0100    ; saved pverb
+000000r 1               gstk_pverbh     =       $0108
+000000r 1               gstk_plinel     =       $0110    ; saved pline
+000000r 1               gstk_plineh     =       $0118
+000000r 1               
+000000r 1               ; FOR stack, max eight entries
+000000r 1               ; note that the Apple II version has sixteen entries
+000000r 1               fstk_varl       =       $0120   ; pointer to index variable
+000000r 1               fstk_varh       =       $0128
+000000r 1               fstk_stepl      =       $0130   ; step value
+000000r 1               fstk_steph      =       $0138
+000000r 1               fstk_plinel     =       $0140   ; saved pline
+000000r 1               fstk_plineh     =       $0148
+000000r 1               fstk_pverbl     =       $0150   ; saved pverb
+000000r 1               fstk_pverbh     =       $0158
+000000r 1               fstk_tol        =       $0160   ; "to" (limit) value
+000000r 1               fstk_toh        =       $0168
+000000r 1               buffer  =       $0200
+000000r 1               KBD     =       $D010
+000000r 1               KBDCR   =       $D011
+000000r 1               DSP     =       $D012
+000000r 1               
+000000r 1                       .org    $8000
+008000  1                       .export START
+008000  1  4C B0 82     START:  JMP     cold            ; BASIC cold start entry point
+008003  1               
+008003  1               ; Get character for keyboard, return in A.
+008003  1  AD 11 D0     rdkey:  LDA     KBDCR           ; Read control register
+008006  1  10 FB                BPL     rdkey           ; Loop if no key pressed
+008008  1  AD 10 D0             LDA     KBD             ; Read key data
+00800B  1  60                   RTS                     ; and return
+00800C  1               
+00800C  1  8A           Se00c:  TXA
+00800D  1  29 20                AND     #$20
+00800F  1  F0 23                BEQ     Le034
+008011  1               
+008011  1  A9 A0        Se011:  LDA     #$A0
+008013  1  85 E4                STA     p2
+008015  1  4C C9 83             JMP     cout
+008018  1               
+008018  1  A9 20        Se018:  LDA     #$20
+00801A  1               
+00801A  1  C5 24        Se01a:  CMP     ch
+00801C  1  B0 0C                BCS     nextbyte
+00801E  1  A9 8D                LDA     #$8D
+008020  1  A0 07                LDY     #$07
+008022  1  20 C9 83     Le022:  JSR     cout
+008025  1  A9 A0                LDA     #$A0
+008027  1  88                   DEY
+008028  1  D0 F8                BNE     Le022
+00802A  1               
+00802A  1  A0 00        nextbyte:       LDY     #$00
+00802C  1  B1 E2                LDA     (p1),Y
+00802E  1  E6 E2                INC     p1
+008030  1  D0 02                BNE     Le034
+008032  1  E6 E3                INC     p1+1
+008034  1  60           Le034:  RTS
+008035  1               
+008035  1               ; token $75 - "," in LIST command
+008035  1  20 15 87     list_comman:    JSR     get16bit
+008038  1  20 76 85             JSR     find_line2
+00803B  1  A5 E2        Le03b:  LDA     p1
+00803D  1  C5 E6                CMP     p3
+00803F  1  A5 E3                LDA     p1+1
+008041  1  E5 E7                SBC     p3+1
+008043  1  B0 EF                BCS     Le034
+008045  1  20 6D 80             JSR     list_line
+008048  1  4C 3B 80             JMP     Le03b
+00804B  1               
+00804B  1               ; token $76 - LIST command w/ no args
+00804B  1  A5 CA        list_all:       LDA     pp
+00804D  1  85 E2                STA     p1
+00804F  1  A5 CB                LDA     pp+1
+008051  1  85 E3                STA     p1+1
+008053  1  A5 4C                LDA     himem
+008055  1  85 E6                STA     p3
+008057  1  A5 4D                LDA     himem+1
+008059  1  85 E7                STA     p3+1
+00805B  1  D0 DE                BNE     Le03b
+00805D  1               
+00805D  1               ; token $74 - LIST command w/ line number(s)
+00805D  1  20 15 87     list_cmd:       JSR     get16bit
+008060  1  20 6D 85             JSR     find_line
+008063  1  A5 E4                LDA     p2
+008065  1  85 E2                STA     p1
+008067  1  A5 E5                LDA     p2+1
+008069  1  85 E3                STA     p1+1
+00806B  1  B0 C7                BCS     Le034
+00806D  1               
+00806D  1               ; list one program line
+00806D  1  86 D8        list_line:      STX     x_save
+00806F  1  A9 A0                LDA     #$A0
+008071  1  85 FA                STA     leadzr
+008073  1  20 2A 80             JSR     nextbyte
+008076  1  98                   TYA
+008077  1               
+008077  1               ; list an integer (line number or literal)
+008077  1  85 E4        list_int:       STA     p2
+008079  1  20 2A 80             JSR     nextbyte
+00807C  1  AA                   TAX
+00807D  1  20 2A 80             JSR     nextbyte
+008080  1  20 1B 85             JSR     prdec
+008083  1  20 18 80     Le083:  JSR     Se018
+008086  1  84 FA                STY     leadzr
+008088  1  AA                   TAX
+008089  1  10 18                BPL     list_token
+00808B  1  0A                   ASL
+00808C  1  10 E9                BPL     list_int
+00808E  1  A5 E4                LDA     p2
+008090  1  D0 03                BNE     Le095
+008092  1  20 11 80             JSR     Se011
+008095  1  8A           Le095:  TXA
+008096  1  20 C9 83     Le096:  JSR     cout
+008099  1  A9 25        Le099:  LDA     #$25
+00809B  1  20 1A 80             JSR     Se01a
+00809E  1  AA                   TAX
+00809F  1  30 F5                BMI     Le096
+0080A1  1  85 E4                STA     p2
+0080A3  1               
+0080A3  1               ; list a single token
+0080A3  1  C9 01        list_token:     CMP     #$01
+0080A5  1  D0 05                BNE     Le0ac
+0080A7  1  A6 D8                LDX     x_save
+0080A9  1  4C CD 83             JMP     crout
+0080AC  1  48           Le0ac:  PHA
+0080AD  1  84 CE                STY     acc
+0080AF  1  A2 ED                LDX     #$ED
+0080B1  1  86 CF                STX     acc+1
+0080B3  1  C9 51                CMP     #$51
+0080B5  1  90 04                BCC     Le0bb
+0080B7  1  C6 CF                DEC     acc+1
+0080B9  1  E9 50                SBC     #$50
+0080BB  1  48           Le0bb:  PHA
+0080BC  1  B1 CE                LDA     (acc),Y
+0080BE  1  AA           Le0be:  TAX
+0080BF  1  88                   DEY
+0080C0  1  B1 CE                LDA     (acc),Y
+0080C2  1  10 FA                BPL     Le0be
+0080C4  1  E0 C0                CPX     #$C0
+0080C6  1  B0 04                BCS     Le0cc
+0080C8  1  E0 00                CPX     #$00
+0080CA  1  30 F2                BMI     Le0be
+0080CC  1  AA           Le0cc:  TAX
+0080CD  1  68                   PLA
+0080CE  1  E9 01                SBC     #$01
+0080D0  1  D0 E9                BNE     Le0bb
+0080D2  1  24 E4                BIT     p2
+0080D4  1  30 03                BMI     Le0d9
+0080D6  1  20 F8 8F             JSR     Seff8
+0080D9  1  B1 CE        Le0d9:  LDA     (acc),Y
+0080DB  1  10 10                BPL     Le0ed
+0080DD  1  AA                   TAX
+0080DE  1  29 3F                AND     #$3F
+0080E0  1  85 E4                STA     p2
+0080E2  1  18                   CLC
+0080E3  1  69 A0                ADC     #$A0
+0080E5  1  20 C9 83             JSR     cout
+0080E8  1  88                   DEY
+0080E9  1  E0 C0                CPX     #$C0
+0080EB  1  90 EC                BCC     Le0d9
+0080ED  1  20 0C 80     Le0ed:  JSR     Se00c
+0080F0  1  68                   PLA
+0080F1  1  C9 5D                CMP     #$5D
+0080F3  1  F0 A4                BEQ     Le099
+0080F5  1  C9 28                CMP     #$28
+0080F7  1  D0 8A                BNE     Le083
+0080F9  1  F0 9E                BEQ     Le099
+0080FB  1               
+0080FB  1               ; token $2A - left paren for substring like A$(3,5)
+0080FB  1  20 18 81     paren_substr:   JSR     Se118
+0080FE  1  95 50                STA     noun_stk_l,X
+008100  1  D5 78                CMP     noun_stk_h_str,X
+008102  1  90 11        Le102:  BCC     Le115
+008104  1  A0 2B        string_err:     LDY     #$2B
+008106  1  4C E0 83     go_errmess_1:   JMP     print_err_msg
+008109  1               
+008109  1               ; token $2B - comma for substring like A$(3,5)
+008109  1  20 34 8E     comma_substr:   JSR     getbyte
+00810C  1  D5 50                CMP     noun_stk_l,X
+00810E  1  90 F4                BCC     string_err
+008110  1  20 E4 8F             JSR     Sefe4
+008113  1  95 78                STA     noun_stk_h_str,X
+008115  1  4C 23 88     Le115:  JMP     left_paren
+008118  1               
+008118  1  20 34 8E     Se118:  JSR     getbyte
+00811B  1  F0 E7                BEQ     string_err
+00811D  1  38                   SEC
+00811E  1  E9 01                SBC     #$01
+008120  1  60                   RTS
+008121  1               
+008121  1               ; token $42 - left paren for string array as dest
+008121  1               ; A$(1)="FOO"
+008121  1  20 18 81     str_arr_dest:   JSR     Se118
+008124  1  95 50                STA     noun_stk_l,X
+008126  1  18                   CLC
+008127  1  F5 78                SBC     noun_stk_h_str,X
+008129  1  4C 02 81             JMP     Le102
+00812C  1  A0 14        Le12c:  LDY     #$14
+00812E  1  D0 D6                BNE     go_errmess_1
+008130  1               
+008130  1               ; token $43 - comma, next var in DIM statement is string
+008130  1               ; token $4E - "DIM", next var in DIM is string
+008130  1  20 18 81     dim_str:        JSR     Se118
+008133  1  E8                   INX
+008134  1  B5 50        Le134:  LDA     noun_stk_l,X
+008136  1  85 DA                STA     aux
+008138  1  65 CE                ADC     acc
+00813A  1  48                   PHA
+00813B  1  A8                   TAY
+00813C  1  B5 78                LDA     noun_stk_h_str,X
+00813E  1  85 DB                STA     aux+1
+008140  1  65 CF                ADC     acc+1
+008142  1  48                   PHA
+008143  1  C4 CA                CPY     pp
+008145  1  E5 CB                SBC     pp+1
+008147  1  B0 E3                BCS     Le12c
+008149  1  A5 DA                LDA     aux
+00814B  1  69 FE                ADC     #$FE
+00814D  1  85 DA                STA     aux
+00814F  1  A9 FF                LDA     #$FF
+008151  1  A8                   TAY
+008152  1  65 DB                ADC     aux+1
+008154  1  85 DB                STA     aux+1
+008156  1  C8           Le156:  INY
+008157  1  B1 DA                LDA     (aux),Y
+008159  1  D9 CC 00             CMP     pv,Y
+00815C  1  D0 0F                BNE     Le16d
+00815E  1  98                   TYA
+00815F  1  F0 F5                BEQ     Le156
+008161  1  68           Le161:  PLA
+008162  1  91 DA                STA     (aux),Y
+008164  1  99 CC 00             STA     pv,Y
+008167  1  88                   DEY
+008168  1  10 F7                BPL     Le161
+00816A  1  E8                   INX
+00816B  1  60                   RTS
+00816C  1  EA                   NOP
+00816D  1  A0 80        Le16d:  LDY     #$80
+00816F  1  D0 95        Le16f:  BNE     go_errmess_1
+008171  1               
+008171  1               ; token ???
+008171  1  A9 00        input_str:      LDA     #$00
+008173  1  20 0A 87             JSR     push_a_noun_stk
+008176  1  A0 02                LDY     #$02
+008178  1  94 78                STY     noun_stk_h_str,X
+00817A  1  20 0A 87             JSR     push_a_noun_stk
+00817D  1  A9 BF                LDA     #$BF                    ; '?'
+00817F  1  20 C9 83             JSR     cout
+008182  1  A0 00                LDY     #$00
+008184  1  20 9E 82             JSR     read_line
+008187  1  94 78                STY     noun_stk_h_str,X
+008189  1  EA                   NOP
+00818A  1  EA                   NOP
+00818B  1  EA                   NOP
+00818C  1               
+00818C  1               ; token $70 - string literal
+00818C  1  B5 51        string_lit:     LDA     noun_stk_l+1,X
+00818E  1  85 CE                STA     acc
+008190  1  B5 79                LDA     noun_stk_h_str+1,X
+008192  1  85 CF                STA     acc+1
+008194  1  E8                   INX
+008195  1  E8                   INX
+008196  1  20 BC 81             JSR     Se1bc
+008199  1  B5 4E        Le199:  LDA     rnd,X
+00819B  1  D5 76                CMP     syn_stk_h+30,X
+00819D  1  B0 15                BCS     Le1b4
+00819F  1  F6 4E                INC     rnd,X
+0081A1  1  A8                   TAY
+0081A2  1  B1 CE                LDA     (acc),Y
+0081A4  1  B4 50                LDY     noun_stk_l,X
+0081A6  1  C4 E4                CPY     p2
+0081A8  1  90 04                BCC     Le1ae
+0081AA  1  A0 83                LDY     #$83
+0081AC  1  D0 C1                BNE     Le16f
+0081AE  1  91 DA        Le1ae:  STA     (aux),Y
+0081B0  1  F6 50                INC     noun_stk_l,X
+0081B2  1  90 E5                BCC     Le199
+0081B4  1  B4 50        Le1b4:  LDY     noun_stk_l,X
+0081B6  1  8A                   TXA
+0081B7  1  91 DA                STA     (aux),Y
+0081B9  1  E8                   INX
+0081BA  1  E8                   INX
+0081BB  1  60                   RTS
+0081BC  1               
+0081BC  1  B5 51        Se1bc:  LDA     noun_stk_l+1,X
+0081BE  1  85 DA                STA     aux
+0081C0  1  38                   SEC
+0081C1  1  E9 02                SBC     #$02
+0081C3  1  85 E4                STA     p2
+0081C5  1  B5 79                LDA     noun_stk_h_str+1,X
+0081C7  1  85 DB                STA     aux+1
+0081C9  1  E9 00                SBC     #$00
+0081CB  1  85 E5                STA     p2+1
+0081CD  1  A0 00                LDY     #$00
+0081CF  1  B1 E4                LDA     (p2),Y
+0081D1  1  18                   CLC
+0081D2  1  E5 DA                SBC     aux
+0081D4  1  85 E4                STA     p2
+0081D6  1  60                   RTS
+0081D7  1               
+0081D7  1               ; token $39 - "=" for string equality operator
+0081D7  1  B5 53        string_eq:      LDA     noun_stk_l+3,X
+0081D9  1  85 CE                STA     acc
+0081DB  1  B5 7B                LDA     noun_stk_h_str+3,X
+0081DD  1  85 CF                STA     acc+1
+0081DF  1  B5 51                LDA     noun_stk_l+1,X
+0081E1  1  85 DA                STA     aux
+0081E3  1  B5 79                LDA     noun_stk_h_str+1,X
+0081E5  1  85 DB                STA     aux+1
+0081E7  1  E8                   INX
+0081E8  1  E8                   INX
+0081E9  1  E8                   INX
+0081EA  1  A0 00                LDY     #$00
+0081EC  1  94 78                STY     noun_stk_h_str,X
+0081EE  1  94 A0                STY     noun_stk_h_int,X
+0081F0  1  C8                   INY
+0081F1  1  94 50                STY     noun_stk_l,X
+0081F3  1  B5 4D        Le1f3:  LDA     himem+1,X
+0081F5  1  D5 75                CMP     syn_stk_h+29,X
+0081F7  1  08                   PHP
+0081F8  1  48                   PHA
+0081F9  1  B5 4F                LDA     rnd+1,X
+0081FB  1  D5 77                CMP     syn_stk_h+31,X
+0081FD  1  90 07                BCC     Le206
+0081FF  1  68                   PLA
+008200  1  28                   PLP
+008201  1  B0 02                BCS     Le205
+008203  1  56 50        Le203:  LSR     noun_stk_l,X
+008205  1  60           Le205:  RTS
+008206  1  A8           Le206:  TAY
+008207  1  B1 CE                LDA     (acc),Y
+008209  1  85 E4                STA     p2
+00820B  1  68                   PLA
+00820C  1  A8                   TAY
+00820D  1  28                   PLP
+00820E  1  B0 F3                BCS     Le203
+008210  1  B1 DA                LDA     (aux),Y
+008212  1  C5 E4                CMP     p2
+008214  1  D0 ED                BNE     Le203
+008216  1  F6 4F                INC     rnd+1,X
+008218  1  F6 4D                INC     himem+1,X
+00821A  1  B0 D7                BCS     Le1f3
+00821C  1               
+00821C  1               ; token $3A - "#" for string inequality operator
+00821C  1  20 D7 81     string_neq:     JSR     string_eq
+00821F  1  4C 36 87             JMP     not_op
+008222  1               
+008222  1               ; token $14 - "*" for numeric multiplication
+008222  1  20 54 82     mult_op:        JSR     Se254
+008225  1  06 CE        Le225:  ASL     acc
+008227  1  26 CF                ROL     acc+1
+008229  1  90 0D                BCC     Le238
+00822B  1  18                   CLC
+00822C  1  A5 E6                LDA     p3
+00822E  1  65 DA                ADC     aux
+008230  1  85 E6                STA     p3
+008232  1  A5 E7                LDA     p3+1
+008234  1  65 DB                ADC     aux+1
+008236  1  85 E7                STA     p3+1
+008238  1  88           Le238:  DEY
+008239  1  F0 09                BEQ     Le244
+00823B  1  06 E6                ASL     p3
+00823D  1  26 E7                ROL     p3+1
+00823F  1  10 E4                BPL     Le225
+008241  1  4C 7E 87             JMP     Le77e
+008244  1  A5 E6        Le244:  LDA     p3
+008246  1  20 08 87             JSR     push_ya_noun_stk
+008249  1  A5 E7                LDA     p3+1
+00824B  1  95 A0                STA     noun_stk_h_int,X
+00824D  1  06 E5                ASL     p2+1
+00824F  1  90 28                BCC     Le279
+008251  1  4C 6F 87             JMP     negate
+008254  1               
+008254  1  A9 55        Se254:  LDA     #$55
+008256  1  85 E5                STA     p2+1
+008258  1  20 5B 82             JSR     Se25b
+00825B  1               
+00825B  1  A5 CE        Se25b:  LDA     acc
+00825D  1  85 DA                STA     aux
+00825F  1  A5 CF                LDA     acc+1
+008261  1  85 DB                STA     aux+1
+008263  1  20 15 87             JSR     get16bit
+008266  1  84 E6                STY     p3
+008268  1  84 E7                STY     p3+1
+00826A  1  A5 CF                LDA     acc+1
+00826C  1  10 09                BPL     Le277
+00826E  1  CA                   DEX
+00826F  1  06 E5                ASL     p2+1
+008271  1  20 6F 87             JSR     negate
+008274  1  20 15 87             JSR     get16bit
+008277  1  A0 10        Le277:  LDY     #$10
+008279  1  60           Le279:  RTS
+00827A  1               
+00827A  1               ; token $1f - "MOD"
+00827A  1  20 6C 8E     mod_op: JSR     See6c
+00827D  1  F0 C5                BEQ     Le244
+00827F  1  FF                   .byte   $FF
+008280  1  C9 84        Le280:  CMP     #$84
+008282  1  D0 02                BNE     Le286
+008284  1  46 F8                LSR     auto_flag
+008286  1  C9 DF        Le286:  CMP     #$DF
+008288  1  F0 11                BEQ     Le29b
+00828A  1  C9 9B                CMP     #$9B
+00828C  1  F0 06                BEQ     Le294
+00828E  1  99 00 02             STA     buffer,Y
+008291  1  C8                   INY
+008292  1  10 0A                BPL     read_line
+008294  1  A0 8B        Le294:  LDY     #$8B
+008296  1  20 C4 83             JSR     Se3c4
+008299  1               
+008299  1  A0 01        Se299:  LDY     #$01
+00829B  1  88           Le29b:  DEY
+00829C  1  30 F6                BMI     Le294
+00829E  1               
+00829E  1               ; read a line from keyboard (using rdkey) into buffer
+00829E  1  20 03 80     read_line:      JSR     rdkey
+0082A1  1  EA                   NOP
+0082A2  1  EA                   NOP
+0082A3  1  20 C9 83             JSR     cout
+0082A6  1  C9 8D                CMP     #$8D
+0082A8  1  D0 D6                BNE     Le280
+0082AA  1  A9 DF                LDA     #$DF
+0082AC  1  99 00 02             STA     buffer,Y
+0082AF  1  60                   RTS
+0082B0  1  20 D3 8F     cold:   JSR     mem_init_4k
+0082B3  1                       .export warm
+0082B3  1  20 CD 83     warm:   JSR     crout           ; BASIC warm start entry point
+0082B6  1  46 D9        Le2b6:  LSR     run_flag
+0082B8  1  A9 BE                LDA     #'>'+$80        ; Prompt character (high bit set)
+0082BA  1  20 C9 83             JSR     cout
+0082BD  1  A0 00                LDY     #$00
+0082BF  1  84 FA                STY     leadzr
+0082C1  1  24 F8                BIT     auto_flag
+0082C3  1  10 0C                BPL     Le2d1
+0082C5  1  A6 F6                LDX     auto_ln
+0082C7  1  A5 F7                LDA     auto_ln+1
+0082C9  1  20 1B 85             JSR     prdec
+0082CC  1  A9 A0                LDA     #$A0
+0082CE  1  20 C9 83             JSR     cout
+0082D1  1  A2 FF        Le2d1:  LDX     #$FF
+0082D3  1  9A                   TXS
+0082D4  1  20 9E 82             JSR     read_line
+0082D7  1  84 F1                STY     token_index
+0082D9  1  8A                   TXA
+0082DA  1  85 C8                STA     text_index
+0082DC  1  A2 20                LDX     #$20
+0082DE  1  20 91 84             JSR     Se491
+0082E1  1  A5 C8                LDA     text_index
+0082E3  1  69 00                ADC     #$00
+0082E5  1  85 E0                STA     pverb
+0082E7  1  A9 00                LDA     #$00
+0082E9  1  AA                   TAX
+0082EA  1  69 02                ADC     #$02
+0082EC  1  85 E1                STA     pverb+1
+0082EE  1  A1 E0                LDA     (pverb,X)
+0082F0  1  29 F0                AND     #$F0
+0082F2  1  C9 B0                CMP     #$B0
+0082F4  1  F0 03                BEQ     Le2f9
+0082F6  1  4C 83 88             JMP     Le883
+0082F9  1  A0 02        Le2f9:  LDY     #$02
+0082FB  1  B1 E0        Le2fb:  LDA     (pverb),Y
+0082FD  1  99 CD 00             STA     pv+1,Y
+008300  1  88                   DEY
+008301  1  D0 F8                BNE     Le2fb
+008303  1  20 8A 83             JSR     Se38a
+008306  1  A5 F1                LDA     token_index
+008308  1  E5 C8                SBC     text_index
+00830A  1  C9 04                CMP     #$04
+00830C  1  F0 A8                BEQ     Le2b6
+00830E  1  91 E0                STA     (pverb),Y
+008310  1  A5 CA                LDA     pp
+008312  1  F1 E0                SBC     (pverb),Y
+008314  1  85 E4                STA     p2
+008316  1  A5 CB                LDA     pp+1
+008318  1  E9 00                SBC     #$00
+00831A  1  85 E5                STA     p2+1
+00831C  1  A5 E4                LDA     p2
+00831E  1  C5 CC                CMP     pv
+008320  1  A5 E5                LDA     p2+1
+008322  1  E5 CD                SBC     pv+1
+008324  1  90 45                BCC     Le36b
+008326  1  A5 CA        Le326:  LDA     pp
+008328  1  F1 E0                SBC     (pverb),Y
+00832A  1  85 E6                STA     p3
+00832C  1  A5 CB                LDA     pp+1
+00832E  1  E9 00                SBC     #$00
+008330  1  85 E7                STA     p3+1
+008332  1  B1 CA                LDA     (pp),Y
+008334  1  91 E6                STA     (p3),Y
+008336  1  E6 CA                INC     pp
+008338  1  D0 02                BNE     Le33c
+00833A  1  E6 CB                INC     pp+1
+00833C  1  A5 E2        Le33c:  LDA     p1
+00833E  1  C5 CA                CMP     pp
+008340  1  A5 E3                LDA     p1+1
+008342  1  E5 CB                SBC     pp+1
+008344  1  B0 E0                BCS     Le326
+008346  1  B5 E4        Le346:  LDA     p2,X
+008348  1  95 CA                STA     pp,X
+00834A  1  CA                   DEX
+00834B  1  10 F9                BPL     Le346
+00834D  1  B1 E0                LDA     (pverb),Y
+00834F  1  A8                   TAY
+008350  1  88           Le350:  DEY
+008351  1  B1 E0                LDA     (pverb),Y
+008353  1  91 E6                STA     (p3),Y
+008355  1  98                   TYA
+008356  1  D0 F8                BNE     Le350
+008358  1  24 F8                BIT     auto_flag
+00835A  1  10 09                BPL     Le365
+00835C  1  B5 F7        Le35c:  LDA     auto_ln+1,X
+00835E  1  75 F5                ADC     auto_inc+1,X
+008360  1  95 F7                STA     auto_ln+1,X
+008362  1  E8                   INX
+008363  1  F0 F7                BEQ     Le35c
+008365  1  10 7E        Le365:  BPL     Le3e5
+008367  1  00 00 00 00          .byte   $00,$00,$00,$00
+00836B  1  A0 14        Le36b:  LDY     #$14
+00836D  1  D0 71                BNE     print_err_msg
+00836F  1               
+00836F  1               ; token $0a - "," in DEL command
+00836F  1  20 15 87     del_comma:      JSR     get16bit
+008372  1  A5 E2                LDA     p1
+008374  1  85 E6                STA     p3
+008376  1  A5 E3                LDA     p1+1
+008378  1  85 E7                STA     p3+1
+00837A  1  20 75 85             JSR     find_line1
+00837D  1  A5 E2                LDA     p1
+00837F  1  85 E4                STA     p2
+008381  1  A5 E3                LDA     p1+1
+008383  1  85 E5                STA     p2+1
+008385  1  D0 0E                BNE     Le395
+008387  1               
+008387  1               ; token $09 - "DEL"
+008387  1  20 15 87     del_cmd:        JSR     get16bit
+00838A  1               
+00838A  1  20 6D 85     Se38a:  JSR     find_line
+00838D  1  A5 E6                LDA     p3
+00838F  1  85 E2                STA     p1
+008391  1  A5 E7                LDA     p3+1
+008393  1  85 E3                STA     p1+1
+008395  1  A0 00        Le395:  LDY     #$00
+008397  1  A5 CA        Le397:  LDA     pp
+008399  1  C5 E4                CMP     p2
+00839B  1  A5 CB                LDA     pp+1
+00839D  1  E5 E5                SBC     p2+1
+00839F  1  B0 16                BCS     Le3b7
+0083A1  1  A5 E4                LDA     p2
+0083A3  1  D0 02                BNE     Le3a7
+0083A5  1  C6 E5                DEC     p2+1
+0083A7  1  C6 E4        Le3a7:  DEC     p2
+0083A9  1  A5 E6                LDA     p3
+0083AB  1  D0 02                BNE     Le3af
+0083AD  1  C6 E7                DEC     p3+1
+0083AF  1  C6 E6        Le3af:  DEC     p3
+0083B1  1  B1 E4                LDA     (p2),Y
+0083B3  1  91 E6                STA     (p3),Y
+0083B5  1  90 E0                BCC     Le397
+0083B7  1  A5 E6        Le3b7:  LDA     p3
+0083B9  1  85 CA                STA     pp
+0083BB  1  A5 E7                LDA     p3+1
+0083BD  1  85 CB                STA     pp+1
+0083BF  1  60                   RTS
+0083C0  1  20 C9 83     Le3c0:  JSR     cout
+0083C3  1  C8                   INY
+0083C4  1               
+0083C4  1  B9 00 8B     Se3c4:  LDA     error_msg_tbl,Y
+0083C7  1  30 F7                BMI     Le3c0
+0083C9  1               
+0083C9  1  C9 8D        cout:   CMP     #$8D
+0083CB  1  D0 06                BNE     Le3d3
+0083CD  1               
+0083CD  1  A9 00        crout:  LDA     #$00            ; character output
+0083CF  1  85 24                STA     ch
+0083D1  1  A9 8D                LDA     #$8D
+0083D3  1  E6 24        Le3d3:  INC     ch
+0083D5  1               
+0083D5  1               ; Send character to display. Char is in A.
+0083D5  1  2C 12 D0     Le3d5:  BIT     DSP          ; See if display ready
+0083D8  1  30 FB                BMI     Le3d5        ; Loop if not
+0083DA  1  8D 12 D0             STA     DSP          ; Write display data
+0083DD  1  60                   RTS                  ; and return
+0083DE  1               
+0083DE  1  A0 06        too_long_err:   LDY     #$06
+0083E0  1               
+0083E0  1  20 D3 8E     print_err_msg:  JSR     print_err_msg1  ; print error message specified in Y
+0083E3  1  24 D9                BIT     run_flag
+0083E5  1  30 03        Le3e5:  BMI     Le3ea
+0083E7  1  4C B6 82             JMP     Le2b6
+0083EA  1  4C 9A 8B     Le3ea:  JMP     Leb9a
+0083ED  1  2A           Le3ed:  ROL
+0083EE  1  69 A0                ADC     #$A0
+0083F0  1  DD 00 02             CMP     buffer,X
+0083F3  1  D0 53                BNE     Le448
+0083F5  1  B1 FE                LDA     (synpag),Y
+0083F7  1  0A                   ASL
+0083F8  1  30 06                BMI     Le400
+0083FA  1  88                   DEY
+0083FB  1  B1 FE                LDA     (synpag),Y
+0083FD  1  30 29                BMI     Le428
+0083FF  1  C8                   INY
+008400  1  86 C8        Le400:  STX     text_index
+008402  1  98                   TYA
+008403  1  48                   PHA
+008404  1  A2 00                LDX     #$00
+008406  1  A1 FE                LDA     (synpag,X)
+008408  1  AA                   TAX
+008409  1  4A           Le409:  LSR
+00840A  1  49 48                EOR     #$48
+00840C  1  11 FE                ORA     (synpag),Y
+00840E  1  C9 C0                CMP     #$C0
+008410  1  90 01                BCC     Le413
+008412  1  E8                   INX
+008413  1  C8           Le413:  INY
+008414  1  D0 F3                BNE     Le409
+008416  1  68                   PLA
+008417  1  A8                   TAY
+008418  1  8A                   TXA
+008419  1  4C C0 84             JMP     Le4c0
+00841C  1               
+00841C  1               ; write a token to the buffer
+00841C  1               ; buffer [++tokndx] = A
+00841C  1  E6 F1        put_token:      INC     token_index
+00841E  1  A6 F1                LDX     token_index
+008420  1  F0 BC                BEQ     too_long_err
+008422  1  9D 00 02             STA     buffer,X
+008425  1  60           Le425:  RTS
+008426  1  A6 C8        Le426:  LDX     text_index
+008428  1  A9 A0        Le428:  LDA     #$A0
+00842A  1  E8           Le42a:  INX
+00842B  1  DD 00 02             CMP     buffer,X
+00842E  1  B0 FA                BCS     Le42a
+008430  1  B1 FE                LDA     (synpag),Y
+008432  1  29 3F                AND     #$3F
+008434  1  4A                   LSR
+008435  1  D0 B6                BNE     Le3ed
+008437  1  BD 00 02             LDA     buffer,X
+00843A  1  B0 06                BCS     Le442
+00843C  1  69 3F                ADC     #$3F
+00843E  1  C9 1A                CMP     #$1A
+008440  1  90 6F                BCC     Le4b1
+008442  1  69 4F        Le442:  ADC     #$4F
+008444  1  C9 0A                CMP     #$0A
+008446  1  90 69                BCC     Le4b1
+008448  1  A6 FD        Le448:  LDX     synstkdx
+00844A  1  C8           Le44a:  INY
+00844B  1  B1 FE                LDA     (synpag),Y
+00844D  1  29 E0                AND     #$E0
+00844F  1  C9 20                CMP     #$20
+008451  1  F0 7A                BEQ     Le4cd
+008453  1  B5 A8                LDA     txtndxstk,X
+008455  1  85 C8                STA     text_index
+008457  1  B5 D1                LDA     tokndxstk,X
+008459  1  85 F1                STA     token_index
+00845B  1  88           Le45b:  DEY
+00845C  1  B1 FE                LDA     (synpag),Y
+00845E  1  0A                   ASL
+00845F  1  10 FA                BPL     Le45b
+008461  1  88                   DEY
+008462  1  B0 38                BCS     Le49c
+008464  1  0A                   ASL
+008465  1  30 35                BMI     Le49c
+008467  1  B4 58                LDY     syn_stk_h,X
+008469  1  84 FF                STY     synpag+1
+00846B  1  B4 80                LDY     syn_stk_l,X
+00846D  1  E8                   INX
+00846E  1  10 DA                BPL     Le44a
+008470  1  F0 B3        Le470:  BEQ     Le425
+008472  1  C9 7E                CMP     #$7E
+008474  1  B0 22                BCS     Le498
+008476  1  CA                   DEX
+008477  1  10 04                BPL     Le47d
+008479  1  A0 06                LDY     #$06
+00847B  1  10 29                BPL     go_errmess_2
+00847D  1  94 80        Le47d:  STY     syn_stk_l,X
+00847F  1  A4 FF                LDY     synpag+1
+008481  1  94 58                STY     syn_stk_h,X
+008483  1  A4 C8                LDY     text_index
+008485  1  94 A8                STY     txtndxstk,X
+008487  1  A4 F1                LDY     token_index
+008489  1  94 D1                STY     tokndxstk,X
+00848B  1  29 1F                AND     #$1F
+00848D  1  A8                   TAY
+00848E  1  B9 20 8C             LDA     syntabl_index,Y
+008491  1               
+008491  1  0A           Se491:  ASL
+008492  1  A8                   TAY
+008493  1  A9 76                LDA     #$76
+008495  1  2A                   ROL
+008496  1  85 FF                STA     synpag+1
+008498  1  D0 01        Le498:  BNE     Le49b
+00849A  1  C8                   INY
+00849B  1  C8           Le49b:  INY
+00849C  1  86 FD        Le49c:  STX     synstkdx
+00849E  1  B1 FE                LDA     (synpag),Y
+0084A0  1  30 84                BMI     Le426
+0084A2  1  D0 05                BNE     Le4a9
+0084A4  1  A0 0E                LDY     #$0E
+0084A6  1  4C E0 83     go_errmess_2:   JMP     print_err_msg
+0084A9  1  C9 03        Le4a9:  CMP     #$03
+0084AB  1  B0 C3                BCS     Le470
+0084AD  1  4A                   LSR
+0084AE  1  A6 C8                LDX     text_index
+0084B0  1  E8                   INX
+0084B1  1  BD 00 02     Le4b1:  LDA     buffer,X
+0084B4  1  90 04                BCC     Le4ba
+0084B6  1  C9 A2                CMP     #$A2
+0084B8  1  F0 0A                BEQ     Le4c4
+0084BA  1  C9 DF        Le4ba:  CMP     #$DF
+0084BC  1  F0 06                BEQ     Le4c4
+0084BE  1  86 C8                STX     text_index
+0084C0  1  20 1C 84     Le4c0:  JSR     put_token
+0084C3  1  C8                   INY
+0084C4  1  88           Le4c4:  DEY
+0084C5  1  A6 FD                LDX     synstkdx
+0084C7  1  B1 FE        Le4c7:  LDA     (synpag),Y
+0084C9  1  88                   DEY
+0084CA  1  0A                   ASL
+0084CB  1  10 CF                BPL     Le49c
+0084CD  1  B4 58        Le4cd:  LDY     syn_stk_h,X
+0084CF  1  84 FF                STY     synpag+1
+0084D1  1  B4 80                LDY     syn_stk_l,X
+0084D3  1  E8                   INX
+0084D4  1  B1 FE                LDA     (synpag),Y
+0084D6  1  29 9F                AND     #$9F
+0084D8  1  D0 ED                BNE     Le4c7
+0084DA  1  85 F2                STA     pcon
+0084DC  1  85 F3                STA     pcon+1
+0084DE  1  98                   TYA
+0084DF  1  48                   PHA
+0084E0  1  86 FD                STX     synstkdx
+0084E2  1  B4 D0                LDY     srch,X
+0084E4  1  84 C9                STY     leadbl
+0084E6  1  18                   CLC
+0084E7  1  A9 0A        Le4e7:  LDA     #$0A
+0084E9  1  85 F9                STA     char
+0084EB  1  A2 00                LDX     #$00
+0084ED  1  C8                   INY
+0084EE  1  B9 00 02             LDA     buffer,Y
+0084F1  1  29 0F                AND     #$0F
+0084F3  1  65 F2        Le4f3:  ADC     pcon
+0084F5  1  48                   PHA
+0084F6  1  8A                   TXA
+0084F7  1  65 F3                ADC     pcon+1
+0084F9  1  30 1C                BMI     Le517
+0084FB  1  AA                   TAX
+0084FC  1  68                   PLA
+0084FD  1  C6 F9                DEC     char
+0084FF  1  D0 F2                BNE     Le4f3
+008501  1  85 F2                STA     pcon
+008503  1  86 F3                STX     pcon+1
+008505  1  C4 F1                CPY     token_index
+008507  1  D0 DE                BNE     Le4e7
+008509  1  A4 C9                LDY     leadbl
+00850B  1  C8                   INY
+00850C  1  84 F1                STY     token_index
+00850E  1  20 1C 84             JSR     put_token
+008511  1  68                   PLA
+008512  1  A8                   TAY
+008513  1  A5 F3                LDA     pcon+1
+008515  1  B0 A9                BCS     Le4c0
+008517  1  A0 00        Le517:  LDY     #$00
+008519  1  10 8B                BPL     go_errmess_2
+00851B  1               
+00851B  1  85 F3        prdec:  STA     pcon+1  ; output A:X in decimal
+00851D  1  86 F2                STX     pcon
+00851F  1  A2 04                LDX     #$04
+008521  1  86 C9                STX     leadbl
+008523  1  A9 B0        Le523:  LDA     #$B0
+008525  1  85 F9                STA     char
+008527  1  A5 F2        Le527:  LDA     pcon
+008529  1  DD 63 85             CMP     dectabl,X
+00852C  1  A5 F3                LDA     pcon+1
+00852E  1  FD 68 85             SBC     dectabh,X
+008531  1  90 0D                BCC     Le540
+008533  1  85 F3                STA     pcon+1
+008535  1  A5 F2                LDA     pcon
+008537  1  FD 63 85             SBC     dectabl,X
+00853A  1  85 F2                STA     pcon
+00853C  1  E6 F9                INC     char
+00853E  1  D0 E7                BNE     Le527
+008540  1  A5 F9        Le540:  LDA     char
+008542  1  E8                   INX
+008543  1  CA                   DEX
+008544  1  F0 0E                BEQ     Le554
+008546  1  C9 B0                CMP     #$B0
+008548  1  F0 02                BEQ     Le54c
+00854A  1  85 C9                STA     leadbl
+00854C  1  24 C9        Le54c:  BIT     leadbl
+00854E  1  30 04                BMI     Le554
+008550  1  A5 FA                LDA     leadzr
+008552  1  F0 0B                BEQ     Le55f
+008554  1  20 C9 83     Le554:  JSR     cout
+008557  1  24 F8                BIT     auto_flag
+008559  1  10 04                BPL     Le55f
+00855B  1  99 00 02             STA     buffer,Y
+00855E  1  C8                   INY
+00855F  1  CA           Le55f:  DEX
+008560  1  10 C1                BPL     Le523
+008562  1  60                   RTS
+008563  1               ; powers of 10 table, low byte
+008563  1  01 0A 64 E8  dectabl:        .byte   $01,$0A,$64,$E8,$10             ; "..dh."
+008567  1  10           
+008568  1               
+008568  1               ; powers of 10 table, high byte
+008568  1  00 00 00 03  dectabh:        .byte   $00,$00,$00,$03,$27             ; "....'"
+00856C  1  27           
+00856D  1               
+00856D  1  A5 CA        find_line:      LDA     pp
+00856F  1  85 E6                STA     p3
+008571  1  A5 CB                LDA     pp+1
+008573  1  85 E7                STA     p3+1
+008575  1               
+008575  1  E8           find_line1:     INX
+008576  1               
+008576  1  A5 E7        find_line2:     LDA     p3+1
+008578  1  85 E5                STA     p2+1
+00857A  1  A5 E6                LDA     p3
+00857C  1  85 E4                STA     p2
+00857E  1  C5 4C                CMP     himem
+008580  1  A5 E5                LDA     p2+1
+008582  1  E5 4D                SBC     himem+1
+008584  1  B0 26                BCS     Le5ac
+008586  1  A0 01                LDY     #$01
+008588  1  B1 E4                LDA     (p2),Y
+00858A  1  E5 CE                SBC     acc
+00858C  1  C8                   INY
+00858D  1  B1 E4                LDA     (p2),Y
+00858F  1  E5 CF                SBC     acc+1
+008591  1  B0 19                BCS     Le5ac
+008593  1  A0 00                LDY     #$00
+008595  1  A5 E6                LDA     p3
+008597  1  71 E4                ADC     (p2),Y
+008599  1  85 E6                STA     p3
+00859B  1  90 03                BCC     Le5a0
+00859D  1  E6 E7                INC     p3+1
+00859F  1  18                   CLC
+0085A0  1  C8           Le5a0:  INY
+0085A1  1  A5 CE                LDA     acc
+0085A3  1  F1 E4                SBC     (p2),Y
+0085A5  1  C8                   INY
+0085A6  1  A5 CF                LDA     acc+1
+0085A8  1  F1 E4                SBC     (p2),Y
+0085AA  1  B0 CA                BCS     find_line2
+0085AC  1  60           Le5ac:  RTS
+0085AD  1               
+0085AD  1               ; token $0B - "NEW"
+0085AD  1  46 F8        new_cmd:        LSR     auto_flag
+0085AF  1  A5 4C                LDA     himem
+0085B1  1  85 CA                STA     pp
+0085B3  1  A5 4D                LDA     himem+1
+0085B5  1  85 CB                STA     pp+1
+0085B7  1               
+0085B7  1               ; token $0C - "CLR"
+0085B7  1  A5 4A        clr:    LDA     lomem
+0085B9  1  85 CC                STA     pv
+0085BB  1  A5 4B                LDA     lomem+1
+0085BD  1  85 CD                STA     pv+1
+0085BF  1  A9 00                LDA     #$00
+0085C1  1  85 FB                STA     for_nest_count
+0085C3  1  85 FC                STA     gosub_nest_count
+0085C5  1  85 FE                STA     synpag
+0085C7  1  A9 00                LDA     #$00
+0085C9  1  85 1D                STA     Z1d
+0085CB  1  60                   RTS
+0085CC  1  A5 D0        Le5cc:  LDA     srch
+0085CE  1  69 05                ADC     #$05
+0085D0  1  85 D2                STA     srch2
+0085D2  1  A5 D1                LDA     tokndxstk
+0085D4  1  69 00                ADC     #$00
+0085D6  1  85 D3                STA     srch2+1
+0085D8  1  A5 D2                LDA     srch2
+0085DA  1  C5 CA                CMP     pp
+0085DC  1  A5 D3                LDA     srch2+1
+0085DE  1  E5 CB                SBC     pp+1
+0085E0  1  90 03                BCC     Le5e5
+0085E2  1  4C 6B 83             JMP     Le36b
+0085E5  1  A5 CE        Le5e5:  LDA     acc
+0085E7  1  91 D0                STA     (srch),Y
+0085E9  1  A5 CF                LDA     acc+1
+0085EB  1  C8                   INY
+0085EC  1  91 D0                STA     (srch),Y
+0085EE  1  A5 D2                LDA     srch2
+0085F0  1  C8                   INY
+0085F1  1  91 D0                STA     (srch),Y
+0085F3  1  A5 D3                LDA     srch2+1
+0085F5  1  C8                   INY
+0085F6  1  91 D0                STA     (srch),Y
+0085F8  1  A9 00                LDA     #$00
+0085FA  1  C8                   INY
+0085FB  1  91 D0                STA     (srch),Y
+0085FD  1  C8                   INY
+0085FE  1  91 D0                STA     (srch),Y
+008600  1  A5 D2                LDA     srch2
+008602  1  85 CC                STA     pv
+008604  1  A5 D3                LDA     srch2+1
+008606  1  85 CD                STA     pv+1
+008608  1  A5 D0                LDA     srch
+00860A  1  90 43                BCC     Le64f
+00860C  1  85 CE        execute_var:    STA     acc
+00860E  1  84 CF                STY     acc+1
+008610  1  20 FF 86             JSR     get_next_prog_byte
+008613  1  30 0E                BMI     Le623
+008615  1  C9 40                CMP     #$40
+008617  1  F0 0A                BEQ     Le623
+008619  1  4C 28 86             JMP     Le628
+00861C  1  06 C9 49 D0          .byte   $06,$C9,$49,$D0,$07,$A9,$49
+008620  1  07 A9 49     
+008623  1  85 CF        Le623:  STA     acc+1
+008625  1  20 FF 86             JSR     get_next_prog_byte
+008628  1  A5 4B        Le628:  LDA     lomem+1
+00862A  1  85 D1                STA     tokndxstk
+00862C  1  A5 4A                LDA     lomem
+00862E  1  85 D0        Le62e:  STA     srch
+008630  1  C5 CC                CMP     pv
+008632  1  A5 D1                LDA     tokndxstk
+008634  1  E5 CD                SBC     pv+1
+008636  1  B0 94                BCS     Le5cc
+008638  1  B1 D0                LDA     (srch),Y
+00863A  1  C8                   INY
+00863B  1  C5 CE                CMP     acc
+00863D  1  D0 06                BNE     Le645
+00863F  1  B1 D0                LDA     (srch),Y
+008641  1  C5 CF                CMP     acc+1
+008643  1  F0 0E                BEQ     Le653
+008645  1  C8           Le645:  INY
+008646  1  B1 D0                LDA     (srch),Y
+008648  1  48                   PHA
+008649  1  C8                   INY
+00864A  1  B1 D0                LDA     (srch),Y
+00864C  1  85 D1                STA     tokndxstk
+00864E  1  68                   PLA
+00864F  1  A0 00        Le64f:  LDY     #$00
+008651  1  F0 DB                BEQ     Le62e
+008653  1  A5 D0        Le653:  LDA     srch
+008655  1  69 03                ADC     #$03
+008657  1  20 0A 87             JSR     push_a_noun_stk
+00865A  1  A5 D1                LDA     tokndxstk
+00865C  1  69 00                ADC     #$00
+00865E  1  95 78                STA     noun_stk_h_str,X
+008660  1  A5 CF                LDA     acc+1
+008662  1  C9 40                CMP     #$40
+008664  1  D0 1C                BNE     fetch_prog_byte
+008666  1  88                   DEY
+008667  1  98                   TYA
+008668  1  20 0A 87             JSR     push_a_noun_stk
+00866B  1  88                   DEY
+00866C  1  94 78                STY     noun_stk_h_str,X
+00866E  1  A0 03                LDY     #$03
+008670  1  F6 78        Le670:  INC     noun_stk_h_str,X
+008672  1  C8                   INY
+008673  1  B1 D0                LDA     (srch),Y
+008675  1  30 F9                BMI     Le670
+008677  1  10 09                BPL     fetch_prog_byte
+008679  1               
+008679  1  A9 00        execute_stmt:   LDA     #$00
+00867B  1  85 D4                STA     if_flag
+00867D  1  85 D5                STA     cr_flag
+00867F  1  A2 20                LDX     #$20
+008681  1               
+008681  1               ; push old verb on stack for later use in precedence test
+008681  1  48           push_old_verb:  PHA
+008682  1  A0 00        fetch_prog_byte:        LDY     #$00
+008684  1  B1 E0                LDA     (pverb),Y
+008686  1  10 18        Le686:  BPL     execute_token
+008688  1  0A                   ASL
+008689  1  30 81                BMI     execute_var
+00868B  1  20 FF 86             JSR     get_next_prog_byte
+00868E  1  20 08 87             JSR     push_ya_noun_stk
+008691  1  20 FF 86             JSR     get_next_prog_byte
+008694  1  95 A0                STA     noun_stk_h_int,X
+008696  1  24 D4        Le696:  BIT     if_flag
+008698  1  10 01                BPL     Le69b
+00869A  1  CA                   DEX
+00869B  1  20 FF 86     Le69b:  JSR     get_next_prog_byte
+00869E  1  B0 E6                BCS     Le686
+0086A0  1               
+0086A0  1  C9 28        execute_token:  CMP     #$28
+0086A2  1  D0 1F                BNE     execute_verb
+0086A4  1  A5 E0                LDA     pverb
+0086A6  1  20 0A 87             JSR     push_a_noun_stk
+0086A9  1  A5 E1                LDA     pverb+1
+0086AB  1  95 78                STA     noun_stk_h_str,X
+0086AD  1  24 D4                BIT     if_flag
+0086AF  1  30 0B                BMI     Le6bc
+0086B1  1  A9 01                LDA     #$01
+0086B3  1  20 0A 87             JSR     push_a_noun_stk
+0086B6  1  A9 00                LDA     #$00
+0086B8  1  95 78                STA     noun_stk_h_str,X
+0086BA  1  F6 78        Le6ba:  INC     noun_stk_h_str,X
+0086BC  1  20 FF 86     Le6bc:  JSR     get_next_prog_byte
+0086BF  1  30 F9                BMI     Le6ba
+0086C1  1  B0 D3                BCS     Le696
+0086C3  1  24 D4        execute_verb:   BIT     if_flag
+0086C5  1  10 06                BPL     Le6cd
+0086C7  1  C9 04                CMP     #$04
+0086C9  1  B0 D0                BCS     Le69b
+0086CB  1  46 D4                LSR     if_flag
+0086CD  1  A8           Le6cd:  TAY
+0086CE  1  85 D6                STA     current_verb
+0086D0  1  B9 98 89             LDA     verb_prec_tbl,Y
+0086D3  1  29 55                AND     #$55
+0086D5  1  0A                   ASL
+0086D6  1  85 D7                STA     precedence
+0086D8  1  68           Le6d8:  PLA
+0086D9  1  A8                   TAY
+0086DA  1  B9 98 89             LDA     verb_prec_tbl,Y
+0086DD  1  29 AA                AND     #$AA
+0086DF  1  C5 D7                CMP     precedence
+0086E1  1  B0 09                BCS     do_verb
+0086E3  1  98                   TYA
+0086E4  1  48                   PHA
+0086E5  1  20 FF 86             JSR     get_next_prog_byte
+0086E8  1  A5 D6                LDA     current_verb
+0086EA  1  90 95                BCC     push_old_verb
+0086EC  1  B9 10 8A     do_verb:        LDA     verb_adr_l,Y
+0086EF  1  85 CE                STA     acc
+0086F1  1  B9 88 8A             LDA     verb_adr_h,Y
+0086F4  1  85 CF                STA     acc+1
+0086F6  1  20 FC 86             JSR     Se6fc
+0086F9  1  4C D8 86             JMP     Le6d8
+0086FC  1               
+0086FC  1  6C CE 00     Se6fc:  JMP     (acc)
+0086FF  1               
+0086FF  1  E6 E0        get_next_prog_byte:     INC     pverb
+008701  1  D0 02                BNE     Le705
+008703  1  E6 E1                INC     pverb+1
+008705  1  B1 E0        Le705:  LDA     (pverb),Y
+008707  1  60                   RTS
+008708  1               
+008708  1  94 77        push_ya_noun_stk:       STY     syn_stk_h+31,X
+00870A  1               
+00870A  1  CA           push_a_noun_stk:        DEX
+00870B  1  30 03                BMI     Le710
+00870D  1  95 50                STA     noun_stk_l,X
+00870F  1  60                   RTS
+008710  1  A0 66        Le710:  LDY     #$66
+008712  1  4C E0 83     go_errmess_3:   JMP     print_err_msg
+008715  1               
+008715  1  A0 00        get16bit:       LDY     #$00
+008717  1  B5 50                LDA     noun_stk_l,X
+008719  1  85 CE                STA     acc
+00871B  1  B5 A0                LDA     noun_stk_h_int,X
+00871D  1  85 CF                STA     acc+1
+00871F  1  B5 78                LDA     noun_stk_h_str,X
+008721  1  F0 0E                BEQ     Le731
+008723  1  85 CF                STA     acc+1
+008725  1  B1 CE                LDA     (acc),Y
+008727  1  48                   PHA
+008728  1  C8                   INY
+008729  1  B1 CE                LDA     (acc),Y
+00872B  1  85 CF                STA     acc+1
+00872D  1  68                   PLA
+00872E  1  85 CE                STA     acc
+008730  1  88                   DEY
+008731  1  E8           Le731:  INX
+008732  1  60                   RTS
+008733  1               
+008733  1               ; token $16 - "=" for numeric equality operator
+008733  1  20 4A 87     eq_op:  JSR     neq_op
+008736  1               
+008736  1               ; token $37 - "NOT"
+008736  1  20 15 87     not_op: JSR     get16bit
+008739  1  98                   TYA
+00873A  1  20 08 87             JSR     push_ya_noun_stk
+00873D  1  95 A0                STA     noun_stk_h_int,X
+00873F  1  C5 CE                CMP     acc
+008741  1  D0 06                BNE     Le749
+008743  1  C5 CF                CMP     acc+1
+008745  1  D0 02                BNE     Le749
+008747  1  F6 50                INC     noun_stk_l,X
+008749  1  60           Le749:  RTS
+00874A  1               
+00874A  1               ; token $17 - "#" for numeric inequality operator
+00874A  1               ; token $1B - "<>" for numeric inequality operator
+00874A  1  20 82 87     neq_op: JSR     subtract
+00874D  1  20 59 87             JSR     sgn_fn
+008750  1               
+008750  1               ; token $31 - "ABS"
+008750  1  20 15 87     abs_fn: JSR     get16bit
+008753  1  24 CF                BIT     acc+1
+008755  1  30 1B                BMI     Se772
+008757  1  CA           Le757:  DEX
+008758  1  60           Le758:  RTS
+008759  1               
+008759  1               ; token $30 - "SGN"
+008759  1  20 15 87     sgn_fn: JSR     get16bit
+00875C  1  A5 CF                LDA     acc+1
+00875E  1  D0 04                BNE     Le764
+008760  1  A5 CE                LDA     acc
+008762  1  F0 F3                BEQ     Le757
+008764  1  A9 FF        Le764:  LDA     #$FF
+008766  1  20 08 87             JSR     push_ya_noun_stk
+008769  1  95 A0                STA     noun_stk_h_int,X
+00876B  1  24 CF                BIT     acc+1
+00876D  1  30 E9                BMI     Le758
+00876F  1               
+00876F  1               ; token $36 - "-" for unary negation
+00876F  1  20 15 87     negate: JSR     get16bit
+008772  1               
+008772  1  98           Se772:  TYA
+008773  1  38                   SEC
+008774  1  E5 CE                SBC     acc
+008776  1  20 08 87             JSR     push_ya_noun_stk
+008779  1  98                   TYA
+00877A  1  E5 CF                SBC     acc+1
+00877C  1  50 23                BVC     Le7a1
+00877E  1  A0 00        Le77e:  LDY     #$00
+008780  1  10 90                BPL     go_errmess_3
+008782  1               
+008782  1               ; token $13 - "-" for numeric subtraction
+008782  1  20 6F 87     subtract:       JSR     negate
+008785  1               
+008785  1               ; token $12 - "+" for numeric addition
+008785  1  20 15 87     add:    JSR     get16bit
+008788  1  A5 CE                LDA     acc
+00878A  1  85 DA                STA     aux
+00878C  1  A5 CF                LDA     acc+1
+00878E  1  85 DB                STA     aux+1
+008790  1  20 15 87             JSR     get16bit
+008793  1               
+008793  1  18           Se793:  CLC
+008794  1  A5 CE                LDA     acc
+008796  1  65 DA                ADC     aux
+008798  1  20 08 87             JSR     push_ya_noun_stk
+00879B  1  A5 CF                LDA     acc+1
+00879D  1  65 DB                ADC     aux+1
+00879F  1  70 DD                BVS     Le77e
+0087A1  1  95 A0        Le7a1:  STA     noun_stk_h_int,X
+0087A3  1               
+0087A3  1               ; token $35 - "+" for unary positive
+0087A3  1  60           unary_pos:      RTS
+0087A4  1               
+0087A4  1               ; token $50 - "TAB" function
+0087A4  1  20 15 87     tab_fn: JSR     get16bit
+0087A7  1  A4 CE                LDY     acc
+0087A9  1  F0 05                BEQ     Le7b0
+0087AB  1  88                   DEY
+0087AC  1  A5 CF                LDA     acc+1
+0087AE  1  F0 0C                BEQ     Le7bc
+0087B0  1  60           Le7b0:  RTS
+0087B1  1               
+0087B1  1               ; horizontal tab
+0087B1  1  A5 24        tabout: LDA     ch
+0087B3  1  09 07                ORA     #$07
+0087B5  1  A8                   TAY
+0087B6  1  C8                   INY
+0087B7  1  A9 A0        Le7b7:  LDA     #$A0
+0087B9  1  20 C9 83             JSR     cout
+0087BC  1  C4 24        Le7bc:  CPY     ch
+0087BE  1  B0 F7                BCS     Le7b7
+0087C0  1  60                   RTS
+0087C1  1               
+0087C1  1               ; token $49 - "," in print, numeric follows
+0087C1  1  20 B1 87     print_com_num:  JSR     tabout
+0087C4  1               
+0087C4  1               ; token $62 - "PRINT" numeric
+0087C4  1  20 15 87     print_num:      JSR     get16bit
+0087C7  1  A5 CF                LDA     acc+1
+0087C9  1  10 0A                BPL     Le7d5
+0087CB  1  A9 AD                LDA     #$AD
+0087CD  1  20 C9 83             JSR     cout
+0087D0  1  20 72 87             JSR     Se772
+0087D3  1  50 EF                BVC     print_num
+0087D5  1  88           Le7d5:  DEY
+0087D6  1  84 D5                STY     cr_flag
+0087D8  1  86 CF                STX     acc+1
+0087DA  1  A6 CE                LDX     acc
+0087DC  1  20 1B 85             JSR     prdec
+0087DF  1  A6 CF                LDX     acc+1
+0087E1  1  60                   RTS
+0087E2  1               
+0087E2  1               ; token $0D - "AUTO" command
+0087E2  1  20 15 87     auto_cmd:       JSR     get16bit
+0087E5  1  A5 CE                LDA     acc
+0087E7  1  85 F6                STA     auto_ln
+0087E9  1  A5 CF                LDA     acc+1
+0087EB  1  85 F7                STA     auto_ln+1
+0087ED  1  88                   DEY
+0087EE  1  84 F8                STY     auto_flag
+0087F0  1  C8                   INY
+0087F1  1  A9 0A                LDA     #$0A
+0087F3  1  85 F4        Le7f3:  STA     auto_inc
+0087F5  1  84 F5                STY     auto_inc+1
+0087F7  1  60                   RTS
+0087F8  1               
+0087F8  1               ; token $0E - "," in AUTO command
+0087F8  1  20 15 87     auto_com:       JSR     get16bit
+0087FB  1  A5 CE                LDA     acc
+0087FD  1  A4 CF                LDY     acc+1
+0087FF  1  10 F2                BPL     Le7f3
+008801  1               
+008801  1               ; token $56 - "=" in FOR statement
+008801  1               ; token $71 - "=" in LET (or implied LET) statement
+008801  1  20 15 87     var_assign:     JSR     get16bit
+008804  1  B5 50                LDA     noun_stk_l,X
+008806  1  85 DA                STA     aux
+008808  1  B5 78                LDA     noun_stk_h_str,X
+00880A  1  85 DB                STA     aux+1
+00880C  1  A5 CE                LDA     acc
+00880E  1  91 DA                STA     (aux),Y
+008810  1  C8                   INY
+008811  1  A5 CF                LDA     acc+1
+008813  1  91 DA                STA     (aux),Y
+008815  1  E8                   INX
+008816  1               
+008816  1  60           Te816:  RTS
+008817  1               
+008817  1               ; token $00 - begining of line
+008817  1               begin_line:
+008817  1  68                   PLA
+008818  1  68                   PLA
+008819  1               
+008819  1               ; token $03 - ":" statement separator
+008819  1  24 D5        colon:  BIT     cr_flag
+00881B  1  10 05                BPL     Le822
+00881D  1               
+00881D  1               ; token $63 - "PRINT" with no arg
+00881D  1  20 CD 83     print_cr:       JSR     crout
+008820  1               
+008820  1               ; token $47 - ";" at end of print statement
+008820  1  46 D5        print_semi:     LSR     cr_flag
+008822  1  60           Le822:  RTS
+008823  1               
+008823  1               
+008823  1               ; token $22 - "(" in string DIM
+008823  1               ; token $34 - "(" in numeric DIM
+008823  1               ; token $38 - "(" in numeric expression
+008823  1               ; token $3F - "(" in some PEEK, RND, SGN, ABS (PDL)
+008823  1  A0 FF        left_paren:     LDY     #$FF
+008825  1  84 D7                STY     precedence
+008827  1               
+008827  1               ; token $72 - ")" everywhere
+008827  1  60           right_paren:    RTS
+008828  1               
+008828  1               ; token $60 - "IF" statement
+008828  1  20 CD 8F     if_stmt:        JSR     Sefcd
+00882B  1  F0 07                BEQ     Le834
+00882D  1  A9 25                LDA     #$25
+00882F  1  85 D6                STA     current_verb
+008831  1  88                   DEY
+008832  1  84 D4                STY     if_flag
+008834  1  E8           Le834:  INX
+008835  1  60                   RTS
+008836  1               ; RUN without CLR, used by Apple DOS
+008836  1  A5 CA        run_warm:       LDA     pp
+008838  1  A4 CB                LDY     pp+1
+00883A  1  D0 5A                BNE     Le896
+00883C  1               
+00883C  1               ; token $5C - "GOSUB" statement
+00883C  1  A0 41        gosub_stmt:     LDY     #$41
+00883E  1  A5 FC                LDA     gosub_nest_count
+008840  1  C9 08                CMP     #$08
+008842  1  B0 5E                BCS     go_errmess_4
+008844  1  A8                   TAY
+008845  1  E6 FC                INC     gosub_nest_count
+008847  1  A5 E0                LDA     pverb
+008849  1  99 00 01             STA     gstk_pverbl,Y
+00884C  1  A5 E1                LDA     pverb+1
+00884E  1  99 08 01             STA     gstk_pverbh,Y
+008851  1  A5 DC                LDA     pline
+008853  1  99 10 01             STA     gstk_plinel,Y
+008856  1  A5 DD                LDA     pline+1
+008858  1  99 18 01             STA     gstk_plineh,Y
+00885B  1               
+00885B  1               ; token $24 - "THEN"
+00885B  1               ; token $5F - "GOTO" statement
+00885B  1  20 15 87     goto_stmt:      JSR     get16bit
+00885E  1  20 6D 85             JSR     find_line
+008861  1  90 04                BCC     Le867
+008863  1  A0 37                LDY     #$37
+008865  1  D0 3B                BNE     go_errmess_4
+008867  1  A5 E4        Le867:  LDA     p2
+008869  1  A4 E5                LDY     p2+1
+00886B  1               
+00886B  1               ; loop to run a program
+00886B  1  85 DC        run_loop:       STA     pline
+00886D  1  84 DD                STY     pline+1
+00886F  1  2C 11 D0             BIT     KBDCR
+008872  1  30 4F                BMI     Le8c3
+008874  1  18                   CLC
+008875  1  69 03                ADC     #$03
+008877  1  90 01                BCC     Le87a
+008879  1  C8                   INY
+00887A  1  A2 FF        Le87a:  LDX     #$FF
+00887C  1  86 D9                STX     run_flag
+00887E  1  9A                   TXS
+00887F  1  85 E0                STA     pverb
+008881  1  84 E1                STY     pverb+1
+008883  1  20 79 86     Le883:  JSR     execute_stmt
+008886  1  24 D9                BIT     run_flag
+008888  1  10 49                BPL     end_stmt
+00888A  1  18                   CLC
+00888B  1  A0 00                LDY     #$00
+00888D  1  A5 DC                LDA     pline
+00888F  1  71 DC                ADC     (pline),Y
+008891  1  A4 DD                LDY     pline+1
+008893  1  90 01                BCC     Le896
+008895  1  C8                   INY
+008896  1  C5 4C        Le896:  CMP     himem
+008898  1  D0 D1                BNE     run_loop
+00889A  1  C4 4D                CPY     himem+1
+00889C  1  D0 CD                BNE     run_loop
+00889E  1  A0 34                LDY     #$34
+0088A0  1  46 D9                LSR     run_flag
+0088A2  1  4C E0 83     go_errmess_4:   JMP     print_err_msg
+0088A5  1               
+0088A5  1               ; token $5B - "RETURN" statement
+0088A5  1  A0 4A        return_stmt:    LDY     #$4A
+0088A7  1  A5 FC                LDA     gosub_nest_count
+0088A9  1  F0 F7                BEQ     go_errmess_4
+0088AB  1  C6 FC                DEC     gosub_nest_count
+0088AD  1  A8                   TAY
+0088AE  1  B9 0F 01             LDA     gstk_plinel-1,Y
+0088B1  1  85 DC                STA     pline
+0088B3  1  B9 17 01             LDA     gstk_plineh-1,Y
+0088B6  1  85 DD                STA     pline+1
+0088B8  1  BE FF 00             LDX     a:synpag+1,Y            ; force absolute addressing mode
+0088BB  1  B9 07 01             LDA     gstk_pverbh-1,Y
+0088BE  1  A8           Le8be:  TAY
+0088BF  1  8A                   TXA
+0088C0  1  4C 7A 88             JMP     Le87a
+0088C3  1  A0 63        Le8c3:  LDY     #$63
+0088C5  1  20 C4 83             JSR     Se3c4
+0088C8  1  A0 01                LDY     #$01
+0088CA  1  B1 DC                LDA     (pline),Y
+0088CC  1  AA                   TAX
+0088CD  1  C8                   INY
+0088CE  1  B1 DC                LDA     (pline),Y
+0088D0  1  20 1B 85             JSR     prdec
+0088D3  1               
+0088D3  1               ; token $51 - "END" statement
+0088D3  1  4C B3 82     end_stmt:       JMP     warm
+0088D6  1  C6 FB        Le8d6:  DEC     for_nest_count
+0088D8  1               
+0088D8  1               ; token $59 - "NEXT" statement
+0088D8  1               ; token $5A - "," in NEXT statement
+0088D8  1  A0 5B        next_stmt:      LDY     #$5B
+0088DA  1  A5 FB                LDA     for_nest_count
+0088DC  1  F0 C4        Le8dc:  BEQ     go_errmess_4
+0088DE  1  A8                   TAY
+0088DF  1  B5 50                LDA     noun_stk_l,X
+0088E1  1  D9 1F 01             CMP     fstk_varl-1,Y
+0088E4  1  D0 F0                BNE     Le8d6
+0088E6  1  B5 78                LDA     noun_stk_h_str,X
+0088E8  1  D9 27 01             CMP     fstk_varh-1,Y
+0088EB  1  D0 E9                BNE     Le8d6
+0088ED  1  B9 2F 01             LDA     fstk_stepl-1,Y
+0088F0  1  85 DA                STA     aux
+0088F2  1  B9 37 01             LDA     fstk_steph-1,Y
+0088F5  1  85 DB                STA     aux+1
+0088F7  1  20 15 87             JSR     get16bit
+0088FA  1  CA                   DEX
+0088FB  1  20 93 87             JSR     Se793
+0088FE  1  20 01 88             JSR     var_assign
+008901  1  CA                   DEX
+008902  1  A4 FB                LDY     for_nest_count
+008904  1  B9 67 01             LDA     fstk_toh-1,Y
+008907  1  95 9F                STA     syn_stk_l+31,X
+008909  1  B9 5F 01             LDA     fstk_tol-1,Y
+00890C  1  A0 00                LDY     #$00
+00890E  1  20 08 87             JSR     push_ya_noun_stk
+008911  1  20 82 87             JSR     subtract
+008914  1  20 59 87             JSR     sgn_fn
+008917  1  20 15 87             JSR     get16bit
+00891A  1  A4 FB                LDY     for_nest_count
+00891C  1  A5 CE                LDA     acc
+00891E  1  F0 05                BEQ     Le925
+008920  1  59 37 01             EOR     fstk_steph-1,Y
+008923  1  10 12                BPL     Le937
+008925  1  B9 3F 01     Le925:  LDA     fstk_plinel-1,Y
+008928  1  85 DC                STA     pline
+00892A  1  B9 47 01             LDA     fstk_plineh-1,Y
+00892D  1  85 DD                STA     pline+1
+00892F  1  BE 4F 01             LDX     fstk_pverbl-1,Y
+008932  1  B9 57 01             LDA     fstk_pverbh-1,Y
+008935  1  D0 87                BNE     Le8be
+008937  1  C6 FB        Le937:  DEC     for_nest_count
+008939  1  60                   RTS
+00893A  1               
+00893A  1               ; token $55 - "FOR" statement
+00893A  1  A0 54        for_stmt:       LDY     #$54
+00893C  1  A5 FB                LDA     for_nest_count
+00893E  1  C9 08                CMP     #$08
+008940  1  F0 9A                BEQ     Le8dc
+008942  1  E6 FB                INC     for_nest_count
+008944  1  A8                   TAY
+008945  1  B5 50                LDA     noun_stk_l,X
+008947  1  99 20 01             STA     fstk_varl,Y
+00894A  1  B5 78                LDA     noun_stk_h_str,X
+00894C  1  99 28 01             STA     fstk_varh,Y
+00894F  1  60                   RTS
+008950  1               
+008950  1               ; token $57 - "TO"
+008950  1  20 15 87     to_clause:      JSR     get16bit
+008953  1  A4 FB                LDY     for_nest_count
+008955  1  A5 CE                LDA     acc
+008957  1  99 5F 01             STA     fstk_tol-1,Y
+00895A  1  A5 CF                LDA     acc+1
+00895C  1  99 67 01             STA     fstk_toh-1,Y
+00895F  1  A9 01                LDA     #$01
+008961  1  99 2F 01             STA     fstk_stepl-1,Y
+008964  1  A9 00                LDA     #$00
+008966  1  99 37 01     Le966:  STA     fstk_steph-1,Y
+008969  1  A5 DC                LDA     pline
+00896B  1  99 3F 01             STA     fstk_plinel-1,Y
+00896E  1  A5 DD                LDA     pline+1
+008970  1  99 47 01             STA     fstk_plineh-1,Y
+008973  1  A5 E0                LDA     pverb
+008975  1  99 4F 01             STA     fstk_pverbl-1,Y
+008978  1  A5 E1                LDA     pverb+1
+00897A  1  99 57 01             STA     fstk_pverbh-1,Y
+00897D  1  60                   RTS
+00897E  1               
+00897E  1  20 15 87     Te97e:  JSR     get16bit
+008981  1  A4 FB                LDY     for_nest_count
+008983  1  A5 CE                LDA     acc
+008985  1  99 2F 01             STA     fstk_stepl-1,Y
+008988  1  A5 CF                LDA     acc+1
+00898A  1  4C 66 89             JMP     Le966
+00898D  1  00 00 00 00          .byte   $00,$00,$00,$00,$00,$00,$00,$00 ; "........"
+008991  1  00 00 00 00  
+008995  1  00 00 00             .byte   $00,$00,$00                     ; "..."
+008998  1               
+008998  1               ; verb precedence
+008998  1               ; (verb_prec[token]&0xAA)>>1 for left (?)
+008998  1               ; verb_prec[token]&0x55 for right (?)
+008998  1               verb_prec_tbl:
+008998  1  00 00 00 AB          .byte   $00,$00,$00,$AB,$03,$03,$03,$03 ; "...+...."
+00899C  1  03 03 03 03  
+0089A0  1  03 03 03 03          .byte   $03,$03,$03,$03,$03,$03,$03,$03 ; "........"
+0089A4  1  03 03 03 03  
+0089A8  1  03 03 3F 3F          .byte   $03,$03,$3F,$3F,$C0,$C0,$3C,$3C ; "..??@@<<"
+0089AC  1  C0 C0 3C 3C  
+0089B0  1  3C 3C 3C 3C          .byte   $3C,$3C,$3C,$3C,$3C,$30,$0F,$C0 ; "<<<<<0.@"
+0089B4  1  3C 30 0F C0  
+0089B8  1  CC FF 55 00          .byte   $CC,$FF,$55,$00,$AB,$AB,$03,$03 ; "L.U.++.."
+0089BC  1  AB AB 03 03  
+0089C0  1  FF FF 55 FF          .byte   $FF,$FF,$55,$FF,$FF,$55,$CF,$CF ; "..U..UOO"
+0089C4  1  FF 55 CF CF  
+0089C8  1  CF CF CF FF          .byte   $CF,$CF,$CF,$FF,$55,$C3,$C3,$C3 ; "OOO.UCCC"
+0089CC  1  55 C3 C3 C3  
+0089D0  1  55 F0 F0 CF          .byte   $55,$F0,$F0,$CF,$56,$56,$56,$55 ; "UppOVVVU"
+0089D4  1  56 56 56 55  
+0089D8  1  FF FF 55 03          .byte   $FF,$FF,$55,$03,$03,$03,$03,$03 ; "..U....."
+0089DC  1  03 03 03 03  
+0089E0  1  03 03 FF FF          .byte   $03,$03,$FF,$FF,$FF,$03,$03,$03 ; "........"
+0089E4  1  FF 03 03 03  
+0089E8  1  03 03 03 03          .byte   $03,$03,$03,$03,$03,$03,$03,$03 ; "........"
+0089EC  1  03 03 03 03  
+0089F0  1  03 03 03 03          .byte   $03,$03,$03,$03,$03,$00,$AB,$03 ; "......+."
+0089F4  1  03 00 AB 03  
+0089F8  1  57 03 03 03          .byte   $57,$03,$03,$03,$03,$07,$03,$03 ; "W......."
+0089FC  1  03 07 03 03  
+008A00  1  03 03 03 03          .byte   $03,$03,$03,$03,$03,$03,$03,$03 ; "........"
+008A04  1  03 03 03 03  
+008A08  1  03 03 AA FF          .byte   $03,$03,$AA,$FF,$FF,$FF,$FF,$FF ; "..*....."
+008A0C  1  FF FF FF FF  
+008A10  1               verb_adr_l:
+008A10  1  17 FF FF 19          .byte   $17,$FF,$FF,$19,$5D,$35,$4B,$F2 ; "....]5Kr"
+008A14  1  5D 35 4B F2  
+008A18  1  EC 87 6F AD          .byte   $EC,$87,$6F,$AD,$B7,$E2,$F8,$54 ; "l.o-7bxT"
+008A1C  1  B7 E2 F8 54  
+008A20  1  80 96 85 82          .byte   $80,$96,$85,$82,$22,$10,$33,$4A ; "....".3J"
+008A24  1  22 10 33 4A  
+008A28  1  13 06 0B 4A          .byte   $13,$06,$0B,$4A,$01,$40,$47,$7A ; "...J.@Gz"
+008A2C  1  01 40 47 7A  
+008A30  1  00 FF 23 09          .byte   $00,$FF,$23,$09,$5B,$16,$B6,$CB ; "..#.[.6K"
+008A34  1  5B 16 B6 CB  
+008A38  1  FF FF FB FF          .byte   $FF,$FF,$FB,$FF,$FF,$24,$F6,$4E ; "..{..$vN"
+008A3C  1  FF 24 F6 4E  
+008A40  1  59 50 00 FF          .byte   $59,$50,$00,$FF,$23,$A3,$6F,$36 ; "YP..##o6"
+008A44  1  23 A3 6F 36  
+008A48  1  23 D7 1C 22          .byte   $23,$D7,$1C,$22,$C2,$AE,$BA,$23 ; "#W."B.:#"
+008A4C  1  C2 AE BA 23  
+008A50  1  FF FF 21 30          .byte   $FF,$FF,$21,$30,$1E,$03,$C4,$20 ; "..!0..D "
+008A54  1  1E 03 C4 20  
+008A58  1  00 C1 FF FF          .byte   $00,$C1,$FF,$FF,$FF,$A0,$30,$1E ; ".A... 0."
+008A5C  1  FF A0 30 1E  
+008A60  1  A4 D3 B6 BC          .byte   $A4,$D3,$B6,$BC,$AA,$3A,$01,$50 ; "$S6<*:.P"
+008A64  1  AA 3A 01 50  
+008A68  1  7E D8 D8 A5          .byte   $7E,$D8,$D8,$A5,$3C,$FF,$16,$5B ; "~XX%<..["
+008A6C  1  3C FF 16 5B  
+008A70  1  28 03 C4 1D          .byte   $28,$03,$C4,$1D,$00,$0C,$4E,$00 ; "(.D...N."
+008A74  1  00 0C 4E 00  
+008A78  1  3E 00 A6 B0          .byte   $3E,$00,$A6,$B0,$00,$BC,$C6,$57 ; ">.&0.<FW"
+008A7C  1  00 BC C6 57  
+008A80  1  8C 01 27 FF          .byte   $8C,$01,$27,$FF,$FF,$FF,$FF,$FF ; "..'....."
+008A84  1  FF FF FF FF  
+008A88  1               verb_adr_h:
+008A88  1  E8 FF FF E8          .byte   $E8,$FF,$FF,$E8,$E0,$E0,$E0,$EF ; "h..h```o"
+008A8C  1  E0 E0 E0 EF  
+008A90  1  EF E3 E3 E5          .byte   $EF,$E3,$E3,$E5,$E5,$E7,$E7,$EE ; "occeeggn"
+008A94  1  E5 E7 E7 EE  
+008A98  1  EF EF E7 E7          .byte   $EF,$EF,$E7,$E7,$E2,$EF,$E7,$E7 ; "ooggbogg"
+008A9C  1  E2 EF E7 E7  
+008AA0  1  EC EC EC E7          .byte   $EC,$EC,$EC,$E7,$EC,$EC,$EC,$E2 ; "lllglllb"
+008AA4  1  EC EC EC E2  
+008AA8  1  00 FF E8 E1          .byte   $00,$FF,$E8,$E1,$E8,$E8,$EF,$EB ; "..hahhok"
+008AAC  1  E8 E8 EF EB  
+008AB0  1  FF FF E0 FF          .byte   $FF,$FF,$E0,$FF,$FF,$EF,$EE,$EF ; "..`..ono"
+008AB4  1  FF EF EE EF  
+008AB8  1  E7 E7 00 FF          .byte   $E7,$E7,$00,$FF,$E8,$E7,$E7,$E7 ; "gg..hggg"
+008ABC  1  E8 E7 E7 E7  
+008AC0  1  E8 E1 E2 EE          .byte   $E8,$E1,$E2,$EE,$EE,$EE,$EE,$E8 ; "habnnnnh"
+008AC4  1  EE EE EE E8  
+008AC8  1  FF FF E1 E1          .byte   $FF,$FF,$E1,$E1,$EF,$EE,$E7,$E8 ; "..aaongh"
+008ACC  1  EF EE E7 E8  
+008AD0  1  EE E7 FF FF          .byte   $EE,$E7,$FF,$FF,$FF,$EE,$E1,$EF ; "ng...nao"
+008AD4  1  FF EE E1 EF  
+008AD8  1  E7 E8 EF EF          .byte   $E7,$E8,$EF,$EF,$EB,$E9,$E8,$E9 ; "ghookihi"
+008ADC  1  EB E9 E8 E9  
+008AE0  1  E9 E8 E8 E8          .byte   $E9,$E8,$E8,$E8,$E8,$FF,$E8,$E8 ; "ihhhh.hh"
+008AE4  1  E8 FF E8 E8  
+008AE8  1  E8 EE E7 E8          .byte   $E8,$EE,$E7,$E8,$EF,$EF,$EE,$EF ; "hnghoono"
+008AEC  1  EF EF EE EF  
+008AF0  1  EE EF EE EE          .byte   $EE,$EF,$EE,$EE,$EF,$EE,$EE,$EE ; "nonnonnn"
+008AF4  1  EF EE EE EE  
+008AF8  1  E1 E8 E8 FF          .byte   $E1,$E8,$E8,$FF,$FF,$FF,$FF,$FF ; "ahh....."
+008AFC  1  FF FF FF FF  
+008B00  1               
+008B00  1               ; Error message strings. Last character has high bit unset.
+008B00  1               error_msg_tbl:
+008B00  1  BE B3 B2 B7          .byte   $BE,$B3,$B2,$B7,$B6,$37         ; ">32767"
+008B04  1  B6 37        
+008B06  1  D4 CF CF A0          .byte   $D4,$CF,$CF,$A0,$CC,$CF,$CE,$47 ; "TOO LONG"
+008B0A  1  CC CF CE 47  
+008B0E  1  D3 D9 CE D4          .byte   $D3,$D9,$CE,$D4,$C1,$58         ; "SYNTAX"
+008B12  1  C1 58        
+008B14  1  CD C5 CD A0          .byte   $CD,$C5,$CD,$A0,$C6,$D5,$CC,$4C ; "MEM FULL"
+008B18  1  C6 D5 CC 4C  
+008B1C  1  D4 CF CF A0          .byte   $D4,$CF,$CF,$A0,$CD,$C1,$CE,$D9,$A0,$D0,$C1,$D2,$C5,$CE,$53 ; "TOO MANY PARENS"
+008B20  1  CD C1 CE D9  
+008B24  1  A0 D0 C1 D2  
+008B2B  1  D3 D4 D2 C9          .byte   $D3,$D4,$D2,$C9,$CE,$47         ; "STRING"
+008B2F  1  CE 47        
+008B31  1  CE CF A0 C5          .byte   $CE,$CF,$A0,$C5,$CE,$44         ; "NO END"
+008B35  1  CE 44        
+008B37  1  C2 C1 C4 A0          .byte   $C2,$C1,$C4,$A0,$C2,$D2,$C1,$CE,$C3,$48 ; "BAD BRANCH"
+008B3B  1  C2 D2 C1 CE  
+008B3F  1  C3 48        
+008B41  1  BE B8 A0 C7          .byte   $BE,$B8,$A0,$C7,$CF,$D3,$D5,$C2,$53     ; ">8 GOSUBS"
+008B45  1  CF D3 D5 C2  
+008B49  1  53           
+008B4A  1  C2 C1 C4 A0          .byte   $C2,$C1,$C4,$A0,$D2,$C5,$D4,$D5,$D2,$4E ; "BAD RETURN"
+008B4E  1  D2 C5 D4 D5  
+008B52  1  D2 4E        
+008B54  1  BE B8 A0 C6          .byte   $BE,$B8,$A0,$C6,$CF,$D2,$53     ; ">8 FORS"
+008B58  1  CF D2 53     
+008B5B  1  C2 C1 C4 A0          .byte   $C2,$C1,$C4,$A0,$CE,$C5,$D8,$54 ; "BAD NEXT"
+008B5F  1  CE C5 D8 54  
+008B63  1  D3 D4 CF D0          .byte   $D3,$D4,$CF,$D0,$D0,$C5,$C4,$A0,$C1,$D4,$20 ; "STOPPED AT "
+008B67  1  D0 C5 C4 A0  
+008B6B  1  C1 D4 20     
+008B6E  1  AA AA AA 20          .byte   $AA,$AA,$AA,$20                 ; "*** "
+008B72  1  A0 C5 D2 D2          .byte   $A0,$C5,$D2,$D2,$0D             ; " ERR.\n"
+008B76  1  0D           
+008B77  1  BE B2 B5 35          .byte   $BE,$B2,$B5,$35                 ; ">255"
+008B7B  1  D2 C1 CE C7          .byte   $D2,$C1,$CE,$C7,$45             ; RANGE"
+008B7F  1  45           
+008B80  1  C4 C9 4D             .byte   $C4,$C9,$4D                     ; "DIM"
+008B83  1  D3 D4 D2 A0          .byte   $D3,$D4,$D2,$A0,$CF,$D6,$C6,$4C ; "STR OVFL"
+008B87  1  CF D6 C6 4C  
+008B8B  1  DC 0D                .byte   $DC,$0D                         ; "\\\n"
+008B8D  1  D2 C5 D4 D9          .byte   $D2,$C5,$D4,$D9,$D0,$C5,$A0,$CC,$C9,$CE,$C5,$8D ; "RETYPE LINE\n"
+008B91  1  D0 C5 A0 CC  
+008B95  1  C9 CE C5 8D  
+008B99  1  3F                   .byte   $3F                             ; "?"
+008B9A  1  46 D9        Leb9a:  LSR     run_flag
+008B9C  1  90 03                BCC     Leba1
+008B9E  1  4C C3 88             JMP     Le8c3
+008BA1  1  A6 CF        Leba1:  LDX     acc+1
+008BA3  1  9A                   TXS
+008BA4  1  A6 CE                LDX     acc
+008BA6  1  A0 8D                LDY     #$8D
+008BA8  1  D0 02                BNE     Lebac
+008BAA  1               
+008BAA  1               ; token $54 - "INPUT" statement, numeric, no prompt
+008BAA  1  A0 99        input_num_stmt: LDY     #$99
+008BAC  1  20 C4 83     Lebac:  JSR     Se3c4
+008BAF  1  86 CE                STX     acc
+008BB1  1  BA                   TSX
+008BB2  1  86 CF                STX     acc+1
+008BB4  1  A0 FE                LDY     #$FE
+008BB6  1  84 D9                STY     run_flag
+008BB8  1  C8                   INY
+008BB9  1  84 C8                STY     text_index
+008BBB  1  20 99 82             JSR     Se299
+008BBE  1  84 F1                STY     token_index
+008BC0  1  A2 20                LDX     #$20
+008BC2  1  A9 30                LDA     #$30
+008BC4  1  20 91 84             JSR     Se491
+008BC7  1  E6 D9                INC     run_flag
+008BC9  1  A6 CE                LDX     acc
+008BCB  1               
+008BCB  1               ; token $27 - "," numeric input
+008BCB  1  A4 C8        input_num_comma:        LDY     text_index
+008BCD  1  0A                   ASL
+008BCE  1  85 CE        Lebce:  STA     acc
+008BD0  1  C8                   INY
+008BD1  1  B9 00 02             LDA     buffer,Y
+008BD4  1  C9 74                CMP     #$74
+008BD6  1  F0 D2                BEQ     input_num_stmt
+008BD8  1  49 B0                EOR     #$B0
+008BDA  1  C9 0A                CMP     #$0A
+008BDC  1  B0 F0                BCS     Lebce
+008BDE  1  C8                   INY
+008BDF  1  C8                   INY
+008BE0  1  84 C8                STY     text_index
+008BE2  1  B9 00 02             LDA     buffer,Y
+008BE5  1  48                   PHA
+008BE6  1  B9 FF 01             LDA     buffer-1,Y
+008BE9  1  A0 00                LDY     #$00
+008BEB  1  20 08 87             JSR     push_ya_noun_stk
+008BEE  1  68                   PLA
+008BEF  1  95 A0                STA     noun_stk_h_int,X
+008BF1  1  A5 CE                LDA     acc
+008BF3  1  C9 C7                CMP     #$C7
+008BF5  1  D0 03                BNE     Lebfa
+008BF7  1  20 6F 87             JSR     negate
+008BFA  1  4C 01 88     Lebfa:  JMP     var_assign
+008BFD  1               
+008BFD  1  FF FF FF 50          .byte   $FF,$FF,$FF,$50
+008C01  1               
+008C01  1  20 13 8C     Tec01:  JSR     Tec13
+008C04  1  D0 15                BNE     Lec1b
+008C06  1               
+008C06  1  20 0B 8C     Tec06:  JSR     Tec0b
+008C09  1  D0 10                BNE     Lec1b
+008C0B  1               
+008C0B  1  20 82 87     Tec0b:  JSR     subtract
+008C0E  1  20 6F 87             JSR     negate
+008C11  1  50 03                BVC     Lec16
+008C13  1               
+008C13  1  20 82 87     Tec13:  JSR     subtract
+008C16  1  20 59 87     Lec16:  JSR     sgn_fn
+008C19  1  56 50                LSR     noun_stk_l,X
+008C1B  1  4C 36 87     Lec1b:  JMP     not_op
+008C1E  1               
+008C1E  1  FF FF                .byte   $FF,$FF
+008C20  1               
+008C20  1               ; indexes into syntabl
+008C20  1               syntabl_index:
+008C20  1  C1 FF 7F D1          .byte   $C1,$FF,$7F,$D1,$CC,$C7,$CF,$CE ; "A..QLGON"
+008C24  1  CC C7 CF CE  
+008C28  1  C5 9A 98 8B          .byte   $C5,$9A,$98,$8B,$96,$95,$93,$BF ; "E......?"
+008C2C  1  96 95 93 BF  
+008C30  1  B2 32 2D 2B          .byte   $B2,$32,$2D,$2B,$BC,$B0,$AC,$BE ; "22-+<0,>"
+008C34  1  BC B0 AC BE  
+008C38  1  35 8E 61 FF          .byte   $35,$8E,$61,$FF,$FF,$FF,$DD,$FB ; "5.a...]{"
+008C3C  1  FF FF DD FB  
+008C40  1               
+008C40  1  20 C9 8F     Tec40:  JSR     Sefc9
+008C43  1  15 4F                ORA     rnd+1,X
+008C45  1  10 05                BPL     Lec4c
+008C47  1               
+008C47  1  20 C9 8F     Tec47:  JSR     Sefc9
+008C4A  1  35 4F                AND     rnd+1,X
+008C4C  1  95 50        Lec4c:  STA     noun_stk_l,X
+008C4E  1  10 CB                BPL     Lec1b
+008C50  1  4C C9 8F             JMP     Sefc9
+008C53  1  40 60 8D 60          .byte   $40,$60,$8D,$60,$8B,$00,$7E,$8C ; "@`.`..~."
+008C57  1  8B 00 7E 8C  
+008C5B  1  33 00 00 60          .byte   $33,$00,$00,$60,$03,$BF,$12,$00 ; "3..`.?.."
+008C5F  1  03 BF 12 00  
+008C63  1  40 89 C9 47          .byte   $40,$89,$C9,$47,$9D,$17,$68,$9D ; "@.IG..h."
+008C67  1  9D 17 68 9D  
+008C6B  1  0A 00 40 60          .byte   $0A,$00,$40,$60,$8D,$60,$8B,$00 ; "..@`.`.."
+008C6F  1  8D 60 8B 00  
+008C73  1  7E 8C 3C 00          .byte   $7E,$8C,$3C,$00,$00,$60,$03,$BF ; "~.<..`.?"
+008C77  1  00 60 03 BF  
+008C7B  1  1B 4B 67 B4          .byte   $1B,$4B,$67,$B4,$A1,$07,$8C,$07 ; ".Kg4!..."
+008C7F  1  A1 07 8C 07  
+008C83  1  AE A9 AC A8          .byte   $AE,$A9,$AC,$A8,$67,$8C,$07,$B4 ; ".),(g..4"
+008C87  1  67 8C 07 B4  
+008C8B  1  AF AC B0 67          .byte   $AF,$AC,$B0,$67,$9D,$B2,$AF,$AC ; "/,0g.2/,"
+008C8F  1  9D B2 AF AC  
+008C93  1  AF A3 67 8C          .byte   $AF,$A3,$67,$8C,$07,$A5,$AB,$AF ; "/#g..%+/"
+008C97  1  07 A5 AB AF  
+008C9B  1  B0 F4 AE A9          .byte   $B0,$F4,$AE,$A9,$B2,$B0,$7F,$0E ; "0t.)20.."
+008C9F  1  B2 B0 7F 0E  
+008CA3  1  27 B4 AE A9          .byte   $27,$B4,$AE,$A9,$B2,$B0,$7F,$0E ; "'4.)20.."
+008CA7  1  B2 B0 7F 0E  
+008CAB  1  28 B4 AE A9          .byte   $28,$B4,$AE,$A9,$B2,$B0,$64,$07 ; "(4.)20d."
+008CAF  1  B2 B0 64 07  
+008CB3  1  A6 A9 67 AF          .byte   $A6,$A9,$67,$AF,$B4,$AF,$A7,$78 ; "&)g/4/'x"
+008CB7  1  B4 AF A7 78  
+008CBB  1  B4 A5 AC 78          .byte   $B4,$A5,$AC,$78,$7F,$02,$AD,$A5 ; "4%,x..-%"
+008CBF  1  7F 02 AD A5  
+008CC3  1  B2 67 A2 B5          .byte   $B2,$67,$A2,$B5,$B3,$AF,$A7,$EE ; "2g"53/'n"
+008CC7  1  B3 AF A7 EE  
+008CCB  1  B2 B5 B4 A5          .byte   $B2,$B5,$B4,$A5,$B2,$7E,$8C,$39 ; "254%2~.9"
+008CCF  1  B2 7E 8C 39  
+008CD3  1  B4 B8 A5 AE          .byte   $B4,$B8,$A5,$AE,$67,$B0,$A5,$B4 ; "48%.g0%4"
+008CD7  1  67 B0 A5 B4  
+008CDB  1  B3 27 AF B4          .byte   $B3,$27,$AF,$B4,$07,$9D,$19,$B2 ; "3'/4...2"
+008CDF  1  07 9D 19 B2  
+008CE3  1  AF A6 7F 05          .byte   $AF,$A6,$7F,$05,$37,$B4,$B5,$B0 ; "/&..7450"
+008CE7  1  37 B4 B5 B0  
+008CEB  1  AE A9 7F 05          .byte   $AE,$A9,$7F,$05,$28,$B4,$B5,$B0 ; ".)..(450"
+008CEF  1  28 B4 B5 B0  
+008CF3  1  AE A9 7F 05          .byte   $AE,$A9,$7F,$05,$2A,$B4,$B5,$B0 ; ".)..*450"
+008CF7  1  2A B4 B5 B0  
+008CFB  1  AE A9 E4 AE          .byte   $AE,$A9,$E4,$AE,$A5,$00,$FF,$FF ; ".)d.%..."
+008CFF  1  A5 00 FF FF  
+008D03  1               syntabl2:
+008D03  1  47 A2 A1 B4          .byte   $47,$A2,$A1,$B4,$7F,$0D,$30,$AD ; "G"!4..0-"
+008D07  1  7F 0D 30 AD  
+008D0B  1  A9 A4 7F 0D          .byte   $A9,$A4,$7F,$0D,$23,$AD,$A9,$A4 ; ")$..#-)$"
+008D0F  1  23 AD A9 A4  
+008D13  1  67 AC AC A1          .byte   $67,$AC,$AC,$A1,$A3,$00,$40,$80 ; "g,,!#.@."
+008D17  1  A3 00 40 80  
+008D1B  1  C0 C1 80 00          .byte   $C0,$C1,$80,$00,$47,$8C,$68,$8C ; "@A..G.h."
+008D1F  1  47 8C 68 8C  
+008D23  1  DB 67 9B 68          .byte   $DB,$67,$9B,$68,$9B,$50,$8C,$63 ; "[g.h.P.c"
+008D27  1  9B 50 8C 63  
+008D2B  1  8C 7F 01 51          .byte   $8C,$7F,$01,$51,$07,$88,$29,$84 ; "...Q..)."
+008D2F  1  07 88 29 84  
+008D33  1  80 C4 80 57          .byte   $80,$C4,$80,$57,$71,$07,$88,$14 ; ".D.Wq..."
+008D37  1  71 07 88 14  
+008D3B  1  ED A5 AD AF          .byte   $ED,$A5,$AD,$AF,$AC,$ED,$A5,$AD ; "m%-/,m%-"
+008D3F  1  AC ED A5 AD  
+008D43  1  A9 A8 F2 AF          .byte   $A9,$A8,$F2,$AF,$AC,$AF,$A3,$71 ; ")(r/,/#q"
+008D47  1  AC AF A3 71  
+008D4B  1  08 88 AE A5          .byte   $08,$88,$AE,$A5,$AC,$68,$83,$08 ; "...%,h.."
+008D4F  1  AC 68 83 08  
+008D53  1  68 9D 08 71          .byte   $68,$9D,$08,$71,$07,$88,$60,$76 ; "h..q..`v"
+008D57  1  07 88 60 76  
+008D5B  1  B4 AF AE 76          .byte   $B4,$AF,$AE,$76,$8D,$76,$8B,$51 ; "4/.v.v.Q"
+008D5F  1  8D 76 8B 51  
+008D63  1  07 88 19 B8          .byte   $07,$88,$19,$B8,$A4,$AE,$B2,$F2 ; "...8$.2r"
+008D67  1  A4 AE B2 F2  
+008D6B  1  B3 B5 F3 A2          .byte   $B3,$B5,$F3,$A2,$A1,$EE,$A7,$B3 ; "35s"!n'3"
+008D6F  1  A1 EE A7 B3  
+008D73  1  E4 AE B2 EB          .byte   $E4,$AE,$B2,$EB,$A5,$A5,$B0,$51 ; "d.2k%%0Q"
+008D77  1  A5 A5 B0 51  
+008D7B  1  07 88 39 81          .byte   $07,$88,$39,$81,$C1,$4F,$7F,$0F ; "..9.AO.."
+008D7F  1  C1 4F 7F 0F  
+008D83  1  2F 00 51 06          .byte   $2F,$00,$51,$06,$88,$29,$C2,$0C ; "/.Q..)B."
+008D87  1  88 29 C2 0C  
+008D8B  1  82 57 8C 6A          .byte   $82,$57,$8C,$6A,$8C,$42,$AE,$A5 ; ".W.j.B.%"
+008D8F  1  8C 42 AE A5  
+008D93  1  A8 B4 60 AE          .byte   $A8,$B4,$60,$AE,$A5,$A8,$B4,$4F ; "(4`.%(4O"
+008D97  1  A5 A8 B4 4F  
+008D9B  1  7E 1E 35 8C          .byte   $7E,$1E,$35,$8C,$27,$51,$07,$88 ; "~.5.'Q.."
+008D9F  1  27 51 07 88  
+008DA3  1  09 8B FE E4          .byte   $09,$8B,$FE,$E4,$AF,$AD,$F2,$AF ; "..~d/-r/"
+008DA7  1  AF AD F2 AF  
+008DAB  1  E4 AE A1 DC          .byte   $E4,$AE,$A1,$DC,$DE,$9C,$DD,$9C ; "d.!\^.]."
+008DAF  1  DE 9C DD 9C  
+008DB3  1  DE DD 9E C3          .byte   $DE,$DD,$9E,$C3,$DD,$CF,$CA,$CD ; "^].C]OJM"
+008DB7  1  DD CF CA CD  
+008DBB  1  CB 00 47 9D          .byte   $CB,$00,$47,$9D,$AD,$A5,$AD,$AF ; "K.G.-%-/"
+008DBF  1  AD A5 AD AF  
+008DC3  1  AC 76 9D AD          .byte   $AC,$76,$9D,$AD,$A5,$AD,$A9,$A8 ; ",v.-%-)("
+008DC7  1  A5 AD A9 A8  
+008DCB  1  E6 A6 AF 60          .byte   $E6,$A6,$AF,$60,$8C,$20,$AF,$B4 ; "f&/`. /4"
+008DCF  1  8C 20 AF B4  
+008DD3  1  B5 A1 F2 AC          .byte   $B5,$A1,$F2,$AC,$A3,$F2,$A3,$B3 ; "5!r,#r#3"
+008DD7  1  A3 F2 A3 B3  
+008DDB  1  60 8C 20 AC          .byte   $60,$8C,$20,$AC,$A5,$A4,$EE,$B5 ; "`. ,%$n5"
+008DDF  1  A5 A4 EE B5  
+008DE3  1  B2 60 AE B5          .byte   $B2,$60,$AE,$B5,$B2,$F4,$B3,$A9 ; "2`.52t3)"
+008DE7  1  B2 F4 B3 A9  
+008DEB  1  AC 60 8C 20          .byte   $AC,$60,$8C,$20,$B4,$B3,$A9,$AC ; ",`. 43),"
+008DEF  1  B4 B3 A9 AC  
+008DF3  1  7A 7E 9A 22          .byte   $7A,$7E,$9A,$22,$20,$00,$60,$03 ; "z~." .`."
+008DF7  1  20 00 60 03  
+008DFB  1  BF 60 03 BF          .byte   $BF,$60,$03,$BF,$1F             ; "?`.?."
+008DFF  1  1F           
+008E00  1               
+008E00  1               ; token $48 - "," string output
+008E00  1  20 B1 87     print_str_comma:        JSR     tabout
+008E03  1               
+008E03  1               ; token $45 - ";" string output
+008E03  1               ; token $61 - "PRINT" string
+008E03  1  E8           print_str:      INX
+008E04  1  E8                   INX
+008E05  1  B5 4F                LDA     rnd+1,X
+008E07  1  85 DA                STA     aux
+008E09  1  B5 77                LDA     syn_stk_h+31,X
+008E0B  1  85 DB                STA     aux+1
+008E0D  1  B4 4E                LDY     rnd,X
+008E0F  1  98           Lee0f:  TYA
+008E10  1  D5 76                CMP     syn_stk_h+30,X
+008E12  1  B0 09                BCS     Lee1d
+008E14  1  B1 DA                LDA     (aux),Y
+008E16  1  20 C9 83             JSR     cout
+008E19  1  C8                   INY
+008E1A  1  4C 0F 8E             JMP     Lee0f
+008E1D  1  A9 FF        Lee1d:  LDA     #$FF
+008E1F  1  85 D5                STA     cr_flag
+008E21  1  60                   RTS
+008E22  1               
+008E22  1               ; token $3B - "LEN(" function
+008E22  1  E8           len_fn: INX
+008E23  1  A9 00                LDA     #$00
+008E25  1  95 78                STA     noun_stk_h_str,X
+008E27  1  95 A0                STA     noun_stk_h_int,X
+008E29  1  B5 77                LDA     syn_stk_h+31,X
+008E2B  1  38                   SEC
+008E2C  1  F5 4F                SBC     rnd+1,X
+008E2E  1  95 50                STA     noun_stk_l,X
+008E30  1  4C 23 88             JMP     left_paren
+008E33  1               
+008E33  1  FF                   .byte   $FF
+008E34  1               
+008E34  1  20 15 87     getbyte:        JSR     get16bit
+008E37  1  A5 CF                LDA     acc+1
+008E39  1  D0 28                BNE     gr_255_err
+008E3B  1  A5 CE                LDA     acc
+008E3D  1  60                   RTS
+008E3E  1               
+008E3E  1               ; token $68 - "," for PLOT statement (???)
+008E3E  1  20 34 8E     plot_comma:     JSR     getbyte
+008E41  1  A4 C8                LDY     text_index
+008E43  1  C9 30                CMP     #$30
+008E45  1  B0 21                BCS     range_err
+008E47  1  C0 28                CPY     #$28
+008E49  1  B0 1D                BCS     range_err
+008E4B  1  60                   RTS
+008E4C  1  EA                   NOP
+008E4D  1  EA                   NOP
+008E4E  1               
+008E4E  1  20 34 8E     Tee4e:  JSR     getbyte
+008E51  1  60                   RTS
+008E52  1  EA                   NOP
+008E53  1  8A           Tee5e:  TXA
+008E54  1  A2 01                LDX     #$01
+008E56  1  B4 CE        l123:   LDY     acc,X
+008E58  1  94 4C                STY     himem,X
+008E5A  1  B4 48                LDY     var,X
+008E5C  1  94 CA                STY     pp,X
+008E5E  1  CA                   DEX
+008E5F  1  F0 F5                BEQ     l123
+008E61  1  AA                   TAX
+008E62  1  60                   RTS
+008E63  1  A0 77        gr_255_err:     LDY     #$77            ; > 255 error
+008E65  1  4C E0 83     go_errmess_5:   JMP     print_err_msg
+008E68  1  A0 7B        range_err:      LDY     #$7B            ; range error
+008E6A  1  D0 F9                BNE     go_errmess_5
+008E6C  1               
+008E6C  1  20 54 82     See6c:  JSR     Se254
+008E6F  1  A5 DA                LDA     aux
+008E71  1  D0 07                BNE     Lee7a
+008E73  1  A5 DB                LDA     aux+1
+008E75  1  D0 03                BNE     Lee7a
+008E77  1  4C 7E 87             JMP     Le77e
+008E7A  1  06 CE        Lee7a:  ASL     acc
+008E7C  1  26 CF                ROL     acc+1
+008E7E  1  26 E6                ROL     p3
+008E80  1  26 E7                ROL     p3+1
+008E82  1  A5 E6                LDA     p3
+008E84  1  C5 DA                CMP     aux
+008E86  1  A5 E7                LDA     p3+1
+008E88  1  E5 DB                SBC     aux+1
+008E8A  1  90 0A                BCC     Lee96
+008E8C  1  85 E7                STA     p3+1
+008E8E  1  A5 E6                LDA     p3
+008E90  1  E5 DA                SBC     aux
+008E92  1  85 E6                STA     p3
+008E94  1  E6 CE                INC     acc
+008E96  1  88           Lee96:  DEY
+008E97  1  D0 E1                BNE     Lee7a
+008E99  1  60                   RTS
+008E9A  1               
+008E9A  1  FF FF FF FF          .byte   $FF,$FF,$FF,$FF,$FF,$FF
+008E9E  1  FF FF        
+008EA0  1               
+008EA0  1               ; token $4D - "CALL" statement
+008EA0  1  20 15 87     call_stmt:      JSR     get16bit
+008EA3  1  6C CE 00             JMP     (acc)
+008EA6  1  A5 4C        l1233:  LDA     himem
+008EA8  1  D0 02                BNE     l1235
+008EAA  1  C6 4D                DEC     himem+1
+008EAC  1  C6 4C        l1235:  DEC     himem
+008EAE  1  A5 48                LDA     var
+008EB0  1  D0 02                BNE     l1236
+008EB2  1  C6 49                DEC     var+1
+008EB4  1  C6 48        l1236:  DEC     var
+008EB6  1  A0 00        l1237:  LDY     #$00
+008EB8  1  B1 4C                LDA     (himem),Y
+008EBA  1  91 48                STA     (var),Y
+008EBC  1  A5 CA                LDA     pp
+008EBE  1  C5 4C                CMP     himem
+008EC0  1  A5 CB                LDA     pp+1
+008EC2  1  E5 4D                SBC     himem+1
+008EC4  1  90 E0                BCC     l1233
+008EC6  1  4C 53 8E             JMP     Tee5e
+008EC9  1  C9 28                CMP     #$28
+008ECB  1  B0 9B        Leecb:  BCS     range_err
+008ECD  1  A8                   TAY
+008ECE  1  A5 C8                LDA     text_index
+008ED0  1  60                   RTS
+008ED1  1  EA                   NOP
+008ED2  1  EA                   NOP
+008ED3  1               
+008ED3  1               print_err_msg1:
+008ED3  1  98                   TYA
+008ED4  1  AA                   TAX
+008ED5  1  A0 6E                LDY     #$6E
+008ED7  1  20 C4 83             JSR     Se3c4
+008EDA  1  8A                   TXA
+008EDB  1  A8                   TAY
+008EDC  1  20 C4 83             JSR     Se3c4
+008EDF  1  A0 72                LDY     #$72
+008EE1  1  4C C4 83             JMP     Se3c4
+008EE4  1               
+008EE4  1  20 15 87     Seee4:  JSR     get16bit
+008EE7  1  06 CE        Leee7:  ASL     acc
+008EE9  1  26 CF                ROL     acc+1
+008EEB  1  30 FA                BMI     Leee7
+008EED  1  B0 DC                BCS     Leecb
+008EEF  1  D0 04                BNE     Leef5
+008EF1  1  C5 CE                CMP     acc
+008EF3  1  B0 D6                BCS     Leecb
+008EF5  1  60           Leef5:  RTS
+008EF6  1               
+008EF6  1               ; token $2E - "PEEK" fn (uses $3F left paren)
+008EF6  1  20 15 87     peek_fn:        JSR     get16bit
+008EF9  1  B1 CE                LDA     (acc),Y
+008EFB  1  94 9F                STY     syn_stk_l+31,X
+008EFD  1  4C 08 87             JMP     push_ya_noun_stk
+008F00  1               
+008F00  1               ; token $65 - "," for POKE statement
+008F00  1  20 34 8E     poke_stmt:      JSR     getbyte
+008F03  1  A5 CE                LDA     acc
+008F05  1  48                   PHA
+008F06  1  20 15 87             JSR     get16bit
+008F09  1  68                   PLA
+008F0A  1  91 CE                STA     (acc),Y
+008F0C  1               
+008F0C  1  60           Tef0c:  RTS
+008F0D  1               
+008F0D  1  FF FF FF             .byte   $FF,$FF,$FF
+008F10  1               
+008F10  1               ; token $15 - "/" for numeric division
+008F10  1  20 6C 8E     divide: JSR     See6c
+008F13  1  A5 CE                LDA     acc
+008F15  1  85 E6                STA     p3
+008F17  1  A5 CF                LDA     acc+1
+008F19  1  85 E7                STA     p3+1
+008F1B  1  4C 44 82             JMP     Le244
+008F1E  1               
+008F1E  1               ; token $44 - "," next var in DIM statement is numeric
+008F1E  1               ; token $4F - "DIM", next var is numeric
+008F1E  1  20 E4 8E     dim_num:        JSR     Seee4
+008F21  1  4C 34 81             JMP     Le134
+008F24  1               
+008F24  1               ; token $2D - "(" for numeric array subscript
+008F24  1  20 E4 8E     num_array_subs: JSR     Seee4
+008F27  1  B4 78                LDY     noun_stk_h_str,X
+008F29  1  B5 50                LDA     noun_stk_l,X
+008F2B  1  69 FE                ADC     #$FE
+008F2D  1  B0 01                BCS     Lef30
+008F2F  1  88                   DEY
+008F30  1  85 DA        Lef30:  STA     aux
+008F32  1  84 DB                STY     aux+1
+008F34  1  18                   CLC
+008F35  1  65 CE                ADC     acc
+008F37  1  95 50                STA     noun_stk_l,X
+008F39  1  98                   TYA
+008F3A  1  65 CF                ADC     acc+1
+008F3C  1  95 78                STA     noun_stk_h_str,X
+008F3E  1  A0 00                LDY     #$00
+008F40  1  B5 50                LDA     noun_stk_l,X
+008F42  1  D1 DA                CMP     (aux),Y
+008F44  1  C8                   INY
+008F45  1  B5 78                LDA     noun_stk_h_str,X
+008F47  1  F1 DA                SBC     (aux),Y
+008F49  1  B0 80                BCS     Leecb
+008F4B  1  4C 23 88             JMP     left_paren
+008F4E  1               
+008F4E  1               ; token $2F - "RND" fn (uses $3F left paren)
+008F4E  1  20 15 87     rnd_fn: JSR     get16bit
+008F51  1  A5 4E                LDA     rnd
+008F53  1  20 08 87             JSR     push_ya_noun_stk
+008F56  1  A5 4F                LDA     rnd+1
+008F58  1  D0 04                BNE     Lef5e
+008F5A  1  C5 4E                CMP     rnd
+008F5C  1  69 00                ADC     #$00
+008F5E  1  29 7F        Lef5e:  AND     #$7F
+008F60  1  85 4F                STA     rnd+1
+008F62  1  95 A0                STA     noun_stk_h_int,X
+008F64  1  A0 11                LDY     #$11
+008F66  1  A5 4F        Lef66:  LDA     rnd+1
+008F68  1  0A                   ASL
+008F69  1  18                   CLC
+008F6A  1  69 40                ADC     #$40
+008F6C  1  0A                   ASL
+008F6D  1  26 4E                ROL     rnd
+008F6F  1  26 4F                ROL     rnd+1
+008F71  1  88                   DEY
+008F72  1  D0 F2                BNE     Lef66
+008F74  1  A5 CE                LDA     acc
+008F76  1  20 08 87             JSR     push_ya_noun_stk
+008F79  1  A5 CF                LDA     acc+1
+008F7B  1  95 A0                STA     noun_stk_h_int,X
+008F7D  1  4C 7A 82             JMP     mod_op
+008F80  1               
+008F80  1  20 15 87     Tef80:  JSR     get16bit
+008F83  1  A4 CE                LDY     acc
+008F85  1  C4 4C                CPY     himem
+008F87  1  A5 CF                LDA     acc+1
+008F89  1  E5 4D                SBC     himem+1
+008F8B  1  90 1F                BCC     Lefab
+008F8D  1  84 48                STY     var
+008F8F  1  A5 CF                LDA     acc+1
+008F91  1  85 49                STA     var+1
+008F93  1  4C B6 8E     Lef93:  JMP     l1237
+008F96  1               
+008F96  1  20 15 87     Tef96:  JSR     get16bit
+008F99  1  A4 CE                LDY     acc
+008F9B  1  C4 CA                CPY     pp
+008F9D  1  A5 CF                LDA     acc+1
+008F9F  1  E5 CB                SBC     pp+1
+008FA1  1  B0 09                BCS     Lefab
+008FA3  1  84 4A                STY     lomem
+008FA5  1  A5 CF                LDA     acc+1
+008FA7  1  85 4B                STA     lomem+1
+008FA9  1  4C B7 85             JMP     clr
+008FAC  1  4C CB 8E     Lefab:  JMP     Leecb
+008FAF  1  EA                   NOP
+008FB0  1  EA                   NOP
+008FB1  1  EA                   NOP
+008FB2  1  EA                   NOP
+008FB3  1  20 C9 8F     Lefb3:  JSR     Sefc9
+008FB6  1               
+008FB6  1               ; token $26 - "," for string input
+008FB6  1               ; token $52 - "INPUT" statement for string
+008FB6  1  20 71 81     string_input:   JSR     input_str
+008FB9  1  4C BF 8F             JMP     Lefbf
+008FBC  1               
+008FBC  1               ; token $53 - "INPUT" with literal string prompt
+008FBC  1  20 03 8E     input_prompt:   JSR     print_str
+008FBF  1  A9 FF        Lefbf:  LDA     #$FF
+008FC1  1  85 C8                STA     text_index
+008FC3  1  A9 74                LDA     #$74
+008FC5  1  8D 00 02             STA     buffer
+008FC8  1  60                   RTS
+008FC9  1               
+008FC9  1  20 36 87     Sefc9:  JSR     not_op
+008FCC  1  E8                   INX
+008FCD  1               
+008FCD  1  20 36 87     Sefcd:  JSR     not_op
+008FD0  1  B5 50                LDA     noun_stk_l,X
+008FD2  1  60                   RTS
+008FD3  1               
+008FD3  1               ; memory initialization for 4K RAM
+008FD3  1  A9 00        mem_init_4k:    LDA     #$00
+008FD5  1  85 4A                STA     lomem
+008FD7  1  85 4C                STA     himem
+008FD9  1  A9 08                LDA     #$08
+008FDB  1  85 4B                STA     lomem+1         ; LOMEM defaults to $0800
+008FDD  1  A9 10                LDA     #$10
+008FDF  1  85 4D                STA     himem+1         ; HIMEM defaults to $1000
+008FE1  1  4C AD 85             JMP     new_cmd
+008FE4  1               
+008FE4  1  D5 78        Sefe4:  CMP     noun_stk_h_str,X
+008FE6  1  D0 01                BNE     Lefe9
+008FE8  1  18                   CLC
+008FE9  1  4C 02 81     Lefe9:  JMP     Le102
+008FEC  1               
+008FEC  1  20 B7 85     Tefec:  JSR     clr
+008FEF  1  4C 36 88             JMP     run_warm
+008FF2  1               
+008FF2  1  20 B7 85     Teff2:  JSR     clr
+008FF5  1  4C 5B 88             JMP     goto_stmt
+008FF8  1               
+008FF8  1  E0 80        Seff8:  CPX     #$80
+008FFA  1  D0 01                BNE     Leffd
+008FFC  1  88                   DEY
+008FFD  1  4C 0C 80     Leffd:  JMP     Se00c
+008FFD  1               
