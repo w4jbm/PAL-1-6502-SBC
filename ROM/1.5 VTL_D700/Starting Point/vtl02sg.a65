@@ -1,0 +1,2161 @@
+;234567890123456789012345678901234567890123456789012345
+;
+; In the Kingswood AS65 assembler some of the options
+; below must be set manually.
+;
+;    .lf  vtl02ca2.lst      (set -l in commandline)
+;    .cr  6502              (is default)
+;    .tf  vtl02ca2.obj,ap1  (set -s2 in commandline)
+;-----------------------------------------------------;
+;             VTL-2 for the 6502 (VTL02C)             ;
+;           Original Altair 680b version by           ;
+;          Frank McCoy and Gary Shannon 1977          ;
+;    2012: Adapted to the 6502 by Michael T. Barry    ;
+; Thanks to sbprojects.com for a very nice assembler! ;
+;-----------------------------------------------------;
+;        Copyright (c) 2012, Michael T. Barry
+;       Revision B (c) 2015, Michael T. Barry
+;       Revision C (c) 2015, Michael T. Barry
+;               All rights reserved.
+;
+; Redistribution and use in source and binary forms,
+;   with or without modification, are permitted,
+;   provided that the following conditions are met: 
+;
+; 1. Redistributions of source code must retain the
+;    above copyright notice, this list of conditions
+;    and the following disclaimer. 
+; 2. Redistributions in binary form must reproduce the
+;    above copyright notice, this list of conditions
+;    and the following disclaimer in the documentation
+;    and/or other materials provided with the
+;    distribution. 
+;
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS
+; AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+; WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+; FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+; SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+; FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+; EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+; NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+; SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+; INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+; LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+; IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+; ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+;-----------------------------------------------------;
+; Except for the differences discussed below, VTL02 was
+;   designed to duplicate the OFFICIALLY DOCUMENTED
+;   behavior of Frank's 680b version, detailed here:
+;     http://www.altair680kit.com/manuals/Altair_
+;     680-VTL-2%20Manual-05-Beta_1-Searchable.pdf
+;   These versions ignore all syntax errors and plow
+;   through VTL-2 programs with the assumption that
+;   they are "correct", but in their own unique ways,
+;   so any claims of compatibility are null and void
+;   for VTL-2 code brave (or stupid) enough to stray
+;   from the beaten path.
+;
+; Differences between the 680b and 6502 versions:
+; * {&} and {*} are initialized on entry.
+; * Division by zero returns 65535 for the quotient and
+;     the dividend for the remainder (the original 6800
+;     version froze).
+; * The 6502 has NO 16-bit registers (other than PC)
+;     and less overall register space than the 6800,
+;     so the interpreter reserves some obscure VTL02C
+;     variables {@ $ ( ) 0 1 2 3 4 5 6 7 8 9 < > : ?}
+;     for its internal use (the 680b version used a
+;     similar tactic, but differed in the details).
+;     The deep nesting of parentheses also puts {; < =}
+;     in danger of corruption.  For example, executing
+;     the statement A=((((((((1)))))))) sets both {A}
+;     and {;} to the value 1.
+; * Users wishing to call a machine language subroutine
+;     via the system variable {>} must first set the
+;     system variable {"} to the proper address vector
+;     (for example, "=768).
+; * The x register is used to point to a simple VTL02C
+;     variable (it can't point explicitly to an array
+;     element like the 680b version because it's only
+;     8-bits).  In the comments, var[x] refers to the
+;     16-bit contents of the zero-page variable pointed
+;     to by register x (residing at addresses x, x+1).
+; * The y register is used as a pointer offset inside
+;     a VTL02C statement (easily handling the maximum
+;     statement length of about 128 bytes).  In the
+;     comments, @[y] refers to the 16-bit address
+;     formed by adding register y to the value in {@}.
+; * The structure and flow of this interpreter are
+;     similar to the 680b version, but have been
+;     reorganized in a more 6502-friendly format (the
+;     6502 has no 'bsr' instruction, so the 'stuffing'
+;     of subroutines within 128 bytes of the caller is
+;     only advantageous for conditional branches).
+; * This version is based on the original port, which
+;     was wound rather tightly, in a failed attempt to
+;     fit it into 768 bytes like the 680b version; many
+;     structured programming principles were sacrificed
+;     in that effort.  The 6502 simply requires more
+;     instructions than the 6800 does to manipulate 16-
+;     bit quantities, but the overall execution speed
+;     should be comparable due to the 6502's slightly
+;     lower average clocks/instruction ratio.  As it is
+;     now, it fits into 1KB with just a few bytes to
+;     spare, but is more feature-laden than the 680b
+;     interpreter whence it came.  Beginning with
+;     Revision C, I tried to strike a tasteful balance
+;     between execution speed and code size, but I
+;     stubbornly kept it under 1024 ROMable bytes and
+;     used only documented op-codes that were supported
+;     by the original NMOS 6502 (without the ROR bug).
+;     I may have missed a few optimizations -- further
+;     suggestions are welcome.
+; * VTL02C is my free gift (?) to the world.  It may be
+;     freely copied, shared, and/or modified by anyone
+;     interested in doing so, with only the stipulation
+;     that any liabilities arising from its use are
+;     limited to the price of VTL02C (nothing).
+;-----------------------------------------------------;
+; 2015: Revision B included some space optimizations
+;         (suggested by dclxvi) and enhancements
+;         (suggested by mkl0815 and Klaus2m5):
+;
+; * Bit-wise operators & | ^ (and, or, xor)
+;   Example:  A=$|128) Get a char and set hi-bit
+;
+; * Absolute addressed 8-bit memory load and store
+;   via the {< @} facility:
+;   Example:  <=P) Point to the I/O port at P
+;             @=@&254^128) Clear low-bit & flip hi-bit
+;
+; * Starting with VTL02B, the space character is no
+;     longer a valid user variable nor a "valid" binary
+;     operator.  It's now only significant as a numeric
+;     constant terminator and as a place-holder in
+;     strings and program listings, where it may be
+;     used to improve human readability (at a slight
+;     cost in execution speed and memory consumption).
+;   Example:
+;   *              (VTL-2)
+;       1000 A=1)         Init loop index
+;       1010 ?=A)           Print index
+;       1020 ?="")          Newline
+;       1030 A=A+1)         Update index
+;       1040 #=A<10*1010) Loop until done
+;
+;   *              (VTL02B)
+;       1000 A = 1             ) Init loop index
+;       1010     ? = A         )   Print index
+;       1020     ? = ""        )   Newline
+;       1030     A = A + 1     )   Update index
+;       1040 # = A < 10 * 1010 ) Loop until done
+;
+; 2015: Revision C includes further enhancements
+;   (suggested by Klaus2m5):
+;
+; * "THEN" and "ELSE" operators [ ]
+;     A[B returns 0 if A is 0, otherwise returns B.
+;     A]B returns B if A is 0, otherwise returns 0.
+;
+; * Some effort was made to balance interpreter code
+;     density with interpreter performance, while
+;     remaining within the 1KB constraint.  Structured
+;     programming principles remained at low priority.
+;
+;-----------------------------------------------------;
+; VTL02 for the 2m5 emulated 6502 SBC
+; - released: 10-dec-2015
+; - codename: speedy Gonzales
+; - based on VTL02C, changes by Klaus2m5
+;
+;   spaces in expressions are allowed on input but are 
+;     removed from the stored program and listing.
+;
+;   added a timer variable {/} with 10ms increments.
+;
+;   the {?} input variable no longer accepts an
+;     expression as input. Only a number is accepted. 
+;
+;   added braces as shift operators.
+;     A}B shifts A by B bits to the right.
+;     A{B shifts A by B bits to the left.
+;     result is unpredictable if B > 16
+;
+;   an expression missing the initial {=} operator
+;     is converted by duplicating the leftmost variable
+;     and inserting a {=}. {N+1} becomes {N=N+1}.
+;
+;   added a statement delimiter {;} allowing multi
+;     statement lines.
+;     branch to same line is now allowed.
+;     {?="..."} & unmatched {)} (used for comments) can
+;     not be continued. 
+;
+;   added load and save facility to user call {>}
+;     "=0;>=13  loads program 13 from EEPROM
+;     "=1;>=42  saves current program to EEPROM as 42
+;     requires emulator version >= 0.83c 
+;
+;   line numbers >= 65280 are now reserved for the
+;     following fast return & goto features.
+;   added a gosub stack, depth = 16 address words.
+;     {==...} is a gosub and pushes the return address
+;     of the next line.
+;     {#==} is a return and pops the address when the
+;     result is the special line numer asigned to {=}.
+;   added a 31 line addresses acronym label array.
+;     lowercase characters and symbols in the $60-$7e
+;     range are used to address the array. the array
+;     is populated with the address of a line when a
+;     character in the allowed range preceeds the line
+;     number.
+;
+;   example (prints the first 1000 prime numbers):
+;       10 /=0;Q=d;V=5;U=25;X=1000
+;       20 N=2;==b
+;       30 N+1;==b
+;       40 N+2;==b
+;      a100 N+2;==b
+;       120 N+4;==b
+;       150 #=a
+;      b200 #=N<U[Q;Q=c;V+2;U=V*V
+;      c300 D=5
+;      e310 A=N/D;#=%]=;D+2;#=D>V[d
+;       320 A=N/D;#=%]=;D+4;#=D<V[e
+;      d400 ?=N;?=""
+;       420 X=X-1;#=X[=
+;       435 ?="Execution time: ";
+;       445 ?=//100;$=46;#=%>10[465;?=0
+;       465 ?=%;?=" seconds"
+;
+;   added message service including error messages
+;     runtime errors:
+;       233 EEPROM file corrupted
+;       234 EEPROM file has incompatible format
+;       237 EEPROM not responding
+;       238 EEPROM full - file not saved
+;       239 EEPROM file not found
+;       240 array pointer exceeds reserved VTL RAM
+;       241 user call pointer inside reserved VTL RAM
+;       248 duplicate label
+;       249 undefined label or empty return stack
+;     errors during program line input:
+;       242 invalid or missing operator
+;       243 invalid or missing target variable 
+;       244 value or variable missing after operator
+;       245 missing closing parenthesis
+;       246 out of memory (*-&)
+;       247 overlap in input buffer, split program line
+;
+; internal changes:
+;   added required atomic variable fetch & store.
+;   replaced some jsr calls with inline code
+;     for skpbyte:, getbyte:, plus:, minus:.
+;   replaced cvbin calls to mul: & plus: with custom
+;     inline multiply by 10 & digit adder.
+;   removed simulation from startup of eval:.
+;   mainloop uses inline code to advance to next
+;     sequential program line.
+;     find: is now only used for true branches.
+;   added decimal to binary conversion on line entry
+;     avoiding the runtime conversion.
+;   abbreviated getting a simple variable in getval:.
+;   bypassed setting a simple variable in exec:.
+;   added inline divide by 10 to prnum:.
+;   fixed statement delimiter not overriding mismatched
+;     parentheses.
+;   merged oper: into getval: and progr: into exec:
+;   added a check for ctrl-c & ctrl-z during goto to
+;     allow user escape from a loop.
+;
+;-----------------------------------------------------;
+; VTL02C variables occupy RAM addresses $0080 to $00ff,
+;   and are little-endian, in the 6502 tradition.
+; The use of lower-case and some control characters for
+;   variable names is allowed, but not recommended; any
+;   attempts to do so would likely result in chaos, due
+;   to aliasing with upper-case and system variables.
+; Variables tagged with an asterisk are used internally
+;   by the interpreter and may change without warning.
+;   {@ $ ( ) 0..9 : > ?} are (usually) intercepted by
+;   the interpreter, so their internal use by VTL02C is
+;   "safe".  The same cannot be said for {; < =}, so be
+;   careful!
+at       = $80      ; {@}* internal pointer / mem byte
+; VTL02C standard user variable space
+;                     {A B C .. X Y Z [ \ ] ^ _}
+; VTL02C system variable space
+space    = $c0      ; { }* gosub & return stack pointer
+; Starting with VTL02B:
+;   the space character is no longer a valid user
+;   variable nor a "valid" binary operator. It is
+;   now only significant as a numeric constant
+;   terminator and as a place-holder in strings
+;   and program listings. 
+bang     = $c2      ; {!}  return line number
+quote    = $c4      ; {"}  user ml subroutine vector
+pound    = $c6      ; {#}  current line number
+dolr     = $c8      ; {$}* temp storage / char i/o
+remn     = $ca      ; {%}  remainder of last division
+ampr     = $cc      ; {&}  pointer to start of array
+tick     = $ce      ; {'}  pseudo-random number
+lparen   = $d0      ; {(}* temp line # / begin sub-exp
+rparen   = $d2      ; {)}* temp storage / end sub-exp
+star     = $d4      ; {*}  pointer to end of free mem
+;          $d6      ; {+ , - .}  valid variables
+; (1)      $fe      ; {/}  10ms count up timer         
+; Interpreter argument stack space
+arg      = $e0      ; {0 1 2 3 4 5 6 7 8 9}*
+; Rarely used variables and argument stack overflow
+;        = $f4      ; {:}* array variable header
+semico   = $f6      ; {;}* statement delimiter
+lthan    = $f8      ; {<}* user memory byte pointer
+equal    = $fa      ; {=}* temp / gosub & return stack
+gthan    = $fc      ; {>}* temp / call ML subroutine
+ques     = $fe      ; {?}* temp / terminal i/o
+;
+nulstk   = $01ff    ; system stack resides in page 1
+; (1) additional configurable variables and operators
+timr_var = '/'      ; 10 ms count up variable
+timr_adr = timr_var*2|$80
+;-----------------------------------------------------;
+; Equates for a 48K+ Apple 2 (original, +, e, c, gs)
+;ESC      = 27       ; "Cancel current input line" key
+;BS       = 8        ; "Delete last keypress" key
+;OP_OR    = '!'      ; Bit-wise OR operator
+;linbuf   = $0200    ; input line buffer
+;prgm     = $0800    ; VTL02C program grows from here
+;himem    = $8000    ;   ... up to the top of user RAM
+;vtl02c   = $8000    ; interpreter cold entry point
+;                     (warm entry point is startok)
+;KBD      = $c000    ; 128 + keypress if waiting
+;KEYIN    = $fd0c    ; apple monitor keyin routine
+;COUT     = $fded    ; apple monitor charout routine
+;-----------------------------------------------------;
+; Equates for the 2m5 SBC emulator
+ESC      = 27       ; "Cancel current input line" key
+BS       = 8        ; "Delete last keypress" key
+OP_OR    = '|'      ; Bit-wise OR operator
+lblary   = $0100    ; array with goto labels, 64 bytes
+vtlstck  = $0140    ; gosub stack space, 32 bytes
+; the following spaces overlap by $20 bytes to allow
+; statement expansion by 2 for max 16 statements
+prgbuf   = $0200    ; program line buffer, 128 bytes
+linbuf   = $0220    ; input line buffer, 128 bytes
+prgm     = $02a0    ; VTL02C program grows from here
+himem    = $7600    ;   ... up to the top of user RAM
+vtl02c   = $f600    ; interpreter cold entry point
+;                     (warm entry point is startok)
+io_area  = $bf00    ;configure emulator I/O
+acia_tx  = io_area+$f0  ;acia tx data register
+acia_rx  = io_area+$f0  ;acia rx data register
+timr_ie  = io_area+$fe  ;timer interrupt enable bit 0
+timr_fl  = io_area+$ff  ;timer flags, bit 0 = 10ms tick
+diag     = io_area+$fc  ;diag reg, bit 7 = exit to mon
+dma_cmd  = io_area+$f7  ;dma command register
+dma_sta  = io_area+$f7  ;dma status register
+dma_dat  = io_area+$f8  ;dma data register
+;=====================================================;
+    org  vtl02c
+;-----------------------------------------------------;
+; Initialize program area pointers and start VTL02C
+;
+    lda  #lo(prgm)
+    sta  ampr       ; {&} -> empty program
+    lda  #hi(prgm)
+    sta  ampr+1
+    lda  #lo(himem)
+    sta  star       ; {*} -> top of user RAM
+    lda  #hi(himem)
+    sta  star+1
+    ldx  #msgvtl    ; identify VTL
+    jsr  vmsg
+startok:
+    sec             ; request "OK" message
+reset:
+    lda  #0         ; clear label array & gosub stack
+    ldx  #$5f
+reset1:
+    sta  lblary,x
+    dex
+    bpl  reset1
+    sta  space      ; clear pointer to user stack
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Start/restart VTL02C command line with program intact
+;
+start:
+    cld             ; a sensible precaution
+    ldx  #lo(nulstk)
+    txs             ; drop whatever is on the stack
+    bcc  user       ; skip "OK" if carry clear
+    ldx  #msgok
+    jsr  vmsg
+user:
+    lda  #0         ; last line # = direct mode
+    sta  pound
+    sta  pound+1
+    jsr  inln       ; input a line from the user
+    lda  linbuf     ; check for line label char
+    cmp  #$60
+    bcc  user1
+    iny             ; skip label char
+user1:
+    ldx  #pound     ; cvbin destination = {#}
+    jsr  cvbin      ; skip line number if exists
+    bne  stmnt      ;   insert line
+    ldy  #0         ; no line label
+    jsr  syntax     ; check syntax & convert numbers
+user2:
+    ldy  #4
+    lda  #lo(prgbuf); direct mode
+    sta  at         ; {@} -> input line buffer
+    lda  #hi(prgbuf)
+    sta  at+1
+    jmp  exec       ; execute a direct mode statement
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Delete/insert/replace program line or list program
+;
+stmnt:
+    jsr  syntax     ; check syntax & convert numbers
+    clc
+    lda  pound
+    ora  pound+1    ; {#} = 0?
+    bne  jskp2      ;   no: delete/insert/replace line
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; List program to terminal and restart "OK" prompt
+; entry:  Carry must be clear
+; uses:   findln:, outch:, prnum:, prstr:, {@ ( )}
+; exit:   to command line via findln:
+;
+list_:
+    jsr  findln     ; find program line >= {#}
+    ldx  #0
+    lda  (at,x)     ; print label
+    bpl  list1
+    lda  #' '       ; previous syntax error in line
+list1:
+    jsr  outch
+    ldx  #lparen    ; line number for prnum
+    jsr  prnum      ; print the line number
+    lda  #' '       ; print a space instead of the
+    jsr  outch      ;   line length byte
+    lda  #0         ; zero for delimiter
+    jsr  prstr      ; print the rest of the line
+    lda  (at,x)     ; check for syntax error
+    bpl  list_
+    ldx  #msgerr+1  ; without cr
+    jsr  verrs      ; print syntax error
+    jmp  list_
+    
+jskp2:
+    lda  lblary+62  ; label array clear ?
+    beq  skp2       ; then skip clearing it
+    lda  #0         ; clear label array & gosub stack
+    ldx  #$5f
+clr_ls:
+    sta  lblary,x
+    dex
+    bpl  clr_ls
+    sta  space      ; clear pointer to user stack
+;-----------------------------------------------------;
+; Delete/insert/replace program line and restart the
+;   command prompt (no "OK" means success)
+; entry:  Carry must be clear
+; uses:   find:, start:, linbuf, {@ > # & * (}
+;
+skp2:
+    jsr  find       ; point {@} to first line >= {#}
+    bcs  insrt
+    eor  pound      ; if line doesn't already exist
+    bne  insrt      ; then skip deletion process
+    cpx  pound+1
+    bne  insrt
+    tax             ; x = 0
+    lda  (at),y
+    tay             ; y = length of line to delete
+    eor  #-1
+    adc  ampr       ; {&} = {&} - y
+    sta  ampr
+    bcs  delt
+    dec  ampr+1
+delt:
+    lda  at
+    sta  gthan      ; {>} = {@}
+    lda  at+1
+    sta  gthan+1
+delt2:
+    lda  gthan
+    cmp  ampr       ; delete the line
+    lda  gthan+1
+    sbc  ampr+1
+    bcs  insrt
+    lda  (gthan),y
+    sta  (gthan,x)
+    inc  gthan
+    bne  delt2
+    inc  gthan+1
+    bcc  delt2      ; (always taken)
+insrt:
+    ldx  #0
+    lda  prgbuf+3   ; get line size
+    cmp  #5         ; empty line ?
+    beq  jstart     ;   yes: end after delete
+    tay
+    clc
+    adc  ampr       ; calculate new program end
+    sta  gthan      ; {>} = {&} + length
+    txa
+    adc  ampr+1
+    sta  gthan+1
+    lda  gthan
+    cmp  star       ; if {>} >= {*} then the program
+    lda  gthan+1    ;   won't fit in available RAM,
+    sbc  star+1     ;   so drop the stack and abort
+    bcc  slide
+    lda  #$f6       ; report out of memory
+    sta  prgm       ; flag program incomplete
+    jmp  verr
+slide:
+    lda  ampr
+    bne  slide2
+    dec  ampr+1
+slide2:
+    dec  ampr
+    lda  ampr
+    cmp  at
+    lda  ampr+1
+    sbc  at+1
+    bcc  move       ; slide open a gap inside the
+    lda  (ampr,x)   ;   program just big enough to
+    sta  (ampr),y   ;   hold the new line
+    bcs  slide      ; (always taken)
+move:
+    ldy  prgbuf+3   ; move line to program
+move2:
+    dey
+    lda  prgbuf,y
+    sta  (at),y
+    cpy  #0
+    bne  move2
+    lda  gthan
+    sta  ampr       ; {&} = {>}
+    lda  gthan+1
+    sta  ampr+1
+jstart:
+    clc
+    jmp  start      ; drop stack, restart cmd prompt
+;-----------------------------------------------------;
+; Point @[y] to the first/next program line >= {#}
+; entry:   (cc): start search at beginning of program
+;          (cs): start search at next line
+;          ({@} -> beginning of current line)
+; used by: list_:, progr:
+; uses:    find:, jstart:, prgm, {@ # & (}
+; exit:    if line not found then abort to "OK" prompt
+;          else {@} -> found line, x:a = {#} = {(} =
+;            actual line number, y = 2, (cc)
+; 10 bytes
+findln:
+    jsr  find       ; find first/next line >= {#}
+    bcs  jstart     ; if end then restart "OK" prompt
+    sta  pound      ; {#} = {(}
+    stx  pound+1
+    rts
+;-----------------------------------------------------;
+; {?="...} handler; called from exec:
+; List line handler; called from list_:
+; 2 bytes
+prstr:
+    iny             ; skip over the " or length byte
+    tax             ; x = delimiter, fall through
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Print a string at @[y]
+; x holds the delimiter char, which is skipped over,
+;   not printed (a null byte is always a delimiter)
+; If a key was pressed, it pauses for another keypress
+;   before returning.  If either of those keys was a
+;   ctrl-C, it drops the stack and restarts the "OK"
+;   prompt with the user program intact
+; entry:  @[y] -> string, x = delimiter char
+; uses:   inch:, inkey:, jstart:, outch:, execrts:
+; exit:   (normal) @[y] -> null or byte after delimiter
+;         (ctrl-C) drop the stack & restart "OK" prompt
+;
+prmsg:
+    lda  #0
+    sta  arg
+    sta  arg+1
+    txa
+    cmp  (at),y     ; found delimiter or null?
+    beq  prmsg2     ; yes: finish up
+    lda  (at),y
+    beq  prmsg2
+; insert to decode packed constant
+    bpl  prmsg1
+    iny             ; is binary constant
+    cmp  #$fd
+    bcs  prmsg3
+    and  #$7f       ; is single byte
+    sta  arg
+    jmp  prmsg4
+prmsg3:             ; is word
+    lsr  a          ; $00 bytes low->N, high->C
+    ror  a
+    bpl  prmsg5     ; skip low byte
+    lda  (at),y
+    sta  arg
+    iny
+prmsg5:
+    bcc  prmsg4     ; skip high byte
+    lda  (at),y
+    sta  arg+1
+    iny
+prmsg4:
+    txa
+    pha
+    ldx  #arg       ; print constant
+    jsr  prnum
+    pla
+    tax
+    bpl  prmsg
+; end decode constant
+prmsg1:
+    jsr  outch      ; no: print char to terminal
+    iny             ;   and loop (with safety escape)
+    bpl  prmsg
+prmsg2:
+    tax             ; save closing delimiter
+    jsr  inkey      ; any key = pause/resume?
+    txa             ; retrieve closing delimiter
+    beq  outnl      ; always \n after null delimiter
+pro_skp:            ; inline skpbyte
+    iny 
+    lda  (at),y
+    cmp  #' '
+    beq  pro_skp    ; end inline    
+    
+    cmp  #';'       ; if trailing char is not ';'
+    bne  outnl      ;   print \n
+    rts             ;   else suppress the \n
+outnl:
+    lda  #$0d       ; \n to terminal
+    jmp  outch
+;-----------------------------------------------------;
+; Execute (hopefully) valid VTL02C statements at @[y]
+;   exec: will continue until drop to direct mode 
+; entry:   @[y] -> left-side of statement
+; uses:    nearly everything
+; exit:    note to machine language subroutine {>=...}
+;            users: no registers or variables are
+;            required to be preserved except the system
+;            stack pointer, the text base pointer {@},
+;            and the original line number {(}
+;            {>=...;..} requires {$} to be preserved
+; if there is a {"} directly after the assignment
+;   operator, the statement will execute as {?="...},
+;   regardless of the variable named on the left side
+;
+exec:
+    lda  (at),y     ; inline getbyte
+    beq  execend1   ; do nothing with a null statement
+    cmp  #')'       ; same for a full-line comment
+    beq  execend1
+    iny
+    cmp  #'A'       ; variables < {A} ?
+    bcc  exec_byp
+; simple variable
+    asl  a          ; form simple variable address
+    ora  #$80       ; mapping function is (a*2)|128
+    sta  arg
+    lda  #0
+    sta  arg+1
+    lda  (at),y     ; '=' is next
+    iny             ; skip space +1
+    ldx  #arg+2
+    jsr  eval
+    pha
+    sty  dolr+1
+    lda  arg+2
+    ldy  #0
+exec3:
+    sei             ; force timer consistency
+    sta  (arg),y
+    adc  tick+1     ; store arg[{1}] in the left-side
+    rol  a          ;   variable
+    tax
+    iny
+    lda  arg+3
+    sta  (arg),y
+    cli             ; force timer consistency end
+    adc  tick       ; pseudo-randomize {'}
+    rol  a
+    sta  tick+1
+    stx  tick
+execend:
+    ldy  dolr+1     ; restore line index
+    pla
+    iny
+    cmp  #';'       ; statement delimiter ?
+    beq  exec       ; continue with next statement
+execend1:
+    lda  pound     ; direct mode ?
+    ora  pound+1
+    beq  jstart4
+prog_nxt:
+    ldy  #3         ; point {@} to next line address
+    ldx  at+1       ; current line address
+    lda  at
+    clc
+    adc  (at),y     ; {@} low + offset
+    bcc  prg_n1
+    inx             ; {@} high + carry
+prg_n1:
+    cpx  ampr+1     ; exceeds end of program?
+    bcc  prg_n2     ;   no
+    bne  jstart4    ;   yes - exit to direct mode
+    cmp  ampr
+    bcs  jstart4
+prg_n2:             ; (cc)
+    stx  at+1       ; next line address valid!
+    sta  at
+    ldy  #1
+    lda  (at),y
+    sta  pound      ; {#} = current line number
+    iny
+    lda  (at),y
+    sta  pound+1
+    ldy  #4
+    jmp  exec       ; loop next line
+jstart4:
+    sec
+    jmp start        
+    
+; special variables including array
+exec_byp:
+    ldx  #arg       ; initialize argument pointer
+    jsr  convp      ; arg[{0}] -> left-side variable
+exec_gb3:           ; inline getbyte + skpbyte
+    lda  (at),y
+    iny             ; skip space +1
+    lda  (at),y
+    cmp  #'"'       ;   yes: print the string with
+    beq  exec2
+    ldx  #arg+2     ; point eval to arg[{1}]
+    jsr  eval       ; evaluate right-side in arg[{1}]
+    pha      
+    sty  dolr+1     ; save to continue same line
+    lda  arg+2
+    ldy  #0
+    ldx  arg+1      ; was left-side an array element?
+    bne  exec3      ;   yes: skip to default actions
+    ldx  arg
+    cpx  #at        ; if {@=...} statement then poke
+    beq  poke       ;   low half of arg[{1}] to ({<})
+    cpx  #dolr      ; if {$=...} statement then print
+    beq  joutch     ;   arg[{1}] as ASCII character
+    cpx  #ques      ; if {?=...} statement then print
+    beq  prnum0     ;   arg[{1}] as unsigned decimal
+    cpx  #gthan     ; if {>=...} statement then call
+    beq  usr        ;   user-defined ml routine
+    cpx  #pound     ; if {#=...} statement then goto
+    beq  goto       ;   arg[{1}] as line number
+    cpx  #equal     ; if {==...} statement then gosub
+    beq  gosub      ;   arg[{1}] as line number
+    jmp  exec3      ; defaults to store variable
+exec2:
+    jsr  prstr      ;     trailing ';' check & return
+    jmp  execend1
+
+gosub:
+    lda  pound     ; is direct mode ?
+    ora  pound+1
+    beq  gosub3     ; return to commandline
+    lda  at         ; calculate next line address
+    ldy  #3
+    clc
+    adc  (at),y     ; add to offset
+    tax
+    lda  #0
+    adc  at+1
+    cmp  ampr+1     ; address beyond end of program ?
+    bcc  gosub2
+    bne  gosub3
+    cpx  ampr
+    bcc  gosub2
+gosub3:
+    lda  #0         ; then return ends program 
+    tax
+gosub2:
+    ldy  space      ; load VTL user stack pointer
+    sta  vtlstck,y  ; push high
+    txa
+    sta  vtlstck+1,y ; push low
+    iny
+    iny
+    tya
+    and  #$1f       ; wrap around upper linimt
+    sta  space      ; save VTL user stack pointer
+    lda  #pound     ; point to standard line #
+    sta  arg
+    ldy  #0         ; restore Y
+    lda  arg+2
+    
+goto:
+    tax             ; save line # low
+    ora  arg+3      ; fall through ?
+    bne  goto1
+    jmp  execend
+
+poke:
+    sta  (lthan),y  ; store low byte
+    jmp  execend
+joutch:
+    jsr  outch      ; print character
+    jmp  execend
+prnum0:
+    ldx  #arg+2     ; x -> arg[{1}], fall through
+    jsr  prnum
+    jmp  execend
+usr:
+    tax             ; jump to user ml routine with
+    lda  quote+1    ; load/save vector?
+    bne  usr1
+    lda  quote
+    beq  usr_load
+    cmp  #1
+    beq  usr_save
+usr1:
+    lda  quote+1
+    cmp  star+1
+    bcc  usr_err
+    bne  usr2
+    lda  quote
+    cmp  star
+    bcc  usr_err
+usr2:
+    lda  arg+3      ;   arg[{1}] in a:x (MSB:LSB)
+    jsr  usrq
+    jmp  execend
+usr_load:
+    jmp  load
+usr_save:
+    jmp  save
+usrq:
+    jmp  (quote)    ; {"} must point to valid 6502 code
+usr_err:
+    lda  #$f1
+    jmp  verrcr
+
+goto_abort:
+    jsr  test_abort ; check for ctrl-c or ctrl-z
+goto1:
+    lda  acia_rx    ; allow user abort
+    bne  goto_abort
+    lda  pound      ; set {!} as return line #
+    sta  bang
+    lda  pound+1
+    sta  bang+1
+    inc  bang       ; + 1
+    bne  goto11
+    inc  bang+1
+goto11:
+    pla             ; true goto
+    lda  lblary+62  ; label array populated ?
+    beq  ldaray     ;   no:  populate now !
+ldarayx:
+    ldy  arg+3      ; is physical address pointer ?
+    cpy  #$ff
+    beq  goto3
+    ora  pound      ; direct mode ?
+    beq  goto12
+    cpy  pound+1    ; set carry flag for find
+    bne  goto2
+    cpx  pound
+    bne  goto2
+    ldy  #4         ; same line - start over 
+    jmp  exec
+goto5:
+    txa             ; build address to label array
+    and  #$1f
+    asl  a
+    tay
+    lda  lblary,y   ; load address from array
+    sta  at
+    iny
+    lda  lblary,y   ; load address from array
+    sta  at+1
+    bne  goto7      ; if initialized
+goto_err:
+    lda  #$f9       ; undefined label or empty stack
+    jmp  verrcr
+jstart3:
+    sec             ; print OK
+    jmp  start    
+goto12:
+    clc             ; from start of prog
+goto2:
+    stx  pound      ; line # goto - store target
+    sty  pound+1
+    jsr  find
+    bcs  jstart3    ; end of program
+    sta  pound
+    stx  pound+1
+    iny             ; y = 3
+    jmp  exec       
+
+goto3:
+    cpx  #'='       ; from stack ?
+    bne  goto5      ; else is label
+    ldy  space      ; load stack pointer
+    bne  goto4
+    ldy  #$20       ; wrap around
+goto4:
+    dey             ; load new address from stack
+    lda  vtlstck,y
+    sta  at
+    dey
+    lda  vtlstck,y
+    beq  goto_err   ; if not initialized
+    sta  at+1
+    sty  space      ; save stack pointer
+goto7:
+    ldy  #1         ; load line #
+    lda  (at),y
+    sta  pound
+    iny    
+    lda  (at),y
+    sta  pound+1
+    ldy  #4
+    jmp  exec
+; populate the acronym label array
+ldaray:
+    txa
+    pha
+    lda  #hi(prgm)
+    tax
+    lda  #lo(prgm)
+    jmp  ldaray2
+ldaraylp:
+    ldy  #0
+    lda  (gthan),y  ; is label ?
+    bmi  ldaray_mis
+    cmp  #$60
+    bcc  ldaray1    ;   no:  skip load
+    and  #$1f       ; make index to label array
+    asl  a
+    tax
+    lda  lblary+1,x ; duplicate label ?
+    bne  ldaray_dup
+    lda  gthan      ; line address -> array
+    sta  lblary,x
+    lda  gthan+1
+    sta  lblary+1,x
+ldaray1:
+    ldy  #3         ; add offset to next line
+    lda  gthan
+    ldx  gthan+1
+    clc
+    adc  (gthan),y  ; add offset
+    bcc  ldaray2
+    inx
+ldaray2:
+    sta  gthan
+    stx  gthan+1
+    cpx  ampr+1     ; end of program ?
+    bcc  ldaraylp   ;   no:  loop next line
+    bne  ldaray3
+    cmp  ampr
+    bcc  ldaraylp
+ldaray3:
+    sty  lblary+62  ; mark populated
+    pla
+    tax
+    lda  pound+1
+    jmp  ldarayx
+ldaray_dup:
+    lda  #$f8       ; duplicate label !
+ldaray_mis:
+    pha
+    ldy  #1
+    lda  (gthan),y  ; line number
+    sta  pound
+    iny
+    lda  (gthan),y  ; line number
+    sta  pound+1
+    lda  #0         ; clear label array & gosub stack
+    ldx  #$5f
+ldaray_clr:
+    sta  lblary,x
+    dex
+    bpl  ldaray_clr
+    pla             ; post error code
+    jmp  verr
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Print an unsigned decimal number (0..65535) in var[x]
+; entry:   var[x] = number to print
+; uses:    outch:, gthan
+; exit:    var[x] = 0
+;
+prnum:
+    lda  #0         ; null delimiter for print
+    pha    
+prnum2:             ;   divide var[x] by 10
+    lda  #0
+    sta  gthan+1    ; clr BCD
+    lda  #16
+    sta  gthan      ; {>} = loop counter
+prdiv1:
+    asl  0,x        ; var[x] is gradually replaced
+    rol  1,x        ;   with the quotient
+    rol  gthan+1    ; BCD result is gradually replaced
+    lda  gthan+1    ;   with the remainder
+    sec
+    sbc  #10        ; partial BCD >= 10 ?
+    bcc  prdiv2
+    sta  gthan+1    ;   yes: update the partial result
+    inc  0,x        ;   set low bit in partial quotient
+prdiv2:
+    dec  gthan
+    bne  prdiv1      ; loop 16 times
+    lda  gthan+1
+    ora  #'0'       ;   convert BCD result to ASCII
+    pha             ;   stack digits in ascending
+    lda  0,x        ;     order ('0' for zero)
+    ora  1,x
+    bne  prnum2     ; } until var[x] is 0
+    pla
+prnum3:
+    jsr  outch      ; print digits in descending
+    pla             ;   order until delimiter is
+    bne  prnum3     ;   encountered
+    rts
+;-----------------------------------------------------;
+; Evaluate a (hopefully) valid VTL02C expression at
+;   @[y] and place its calculated value in arg[x]
+; A VTL02C expression is defined as a string of one or
+;   more terms, separated by operators and terminated
+;   with a null or an unmatched right parenthesis
+; A term is defined as a variable name, a decimal
+;   constant, or a parenthesized sub-expression; terms
+;   are evaluated strictly from left to right
+; A variable name is defined as a user variable, an
+;   array element expression enclosed in {: )}, or a
+;   system variable (which may have side-effects)
+; entry:   @[y] -> expression text, x -> argument
+; uses:    getval:, {@}, argument stack area
+; exit:    arg[x] = result, @[y] -> next text
+;
+eval:
+    jsr  getval     ; arg[x] = value of first term 
+    jmp  eval_gb    ; startup skipping simulation
+;-----------------------------------------------------;
+; Get numeric value of the term at @[y] into var[x]
+; Some examples of valid terms:  123, $, H, (15-:J)/?)
+;
+getval:
+    lda  (at),y     ; get variable or constant
+    bpl  getvar
+    iny
+; get constant
+    cmp  #$fd       ; constant type ?       
+    bcs  getword
+    and  #$7f       ; is single byte
+    sta  0,x
+    lda  #0
+    sta  1,x
+    rts
+getword:            ; is word
+    lsr  a          ; restore null bytes
+    ror  a
+    bpl  clrlow     ; low byte = 0
+    lda  (at),y     ; copy constant low
+    sta  0,x
+    iny
+    bcc  clrhigh    ; high byte = 0
+gethigh:
+    lda  (at),y     ; copy constant low
+    sta  1,x
+    iny
+    rts        
+clrlow:              
+    lda  #0         
+    sta  0,x
+    beq  gethigh
+clrhigh:    
+    lda  #0
+    sta  1,x
+    rts    
+; get variable
+getvar:
+    beq  getrts     ; safety exit - end of banana
+    cmp  ';'
+    beq  getrts
+    iny
+    cmp  #'@'       ; peek?
+    bcs  getv_byp   ; bypass variables >= @
+    cmp  #':'       ; array element?
+    beq  getary
+    cmp  #'('       ; sub-expression?
+    beq  eval       ;   yes: evaluate it recursively
+    cmp  #'='       ; return after gosub
+    beq  gotomark
+    cmp  #'$'       ; user char input?
+    beq  in_chr
+    cmp  #'?'       ; user line input?
+    beq  in_val
+getv_byp:
+    beq  peek
+    cmp  #$60       ; line # variable
+    bcs  gotomark
+
+    sty  dolr       ; get simple variable
+    asl  a
+    ora  #$80
+    tay
+    sei             ; force timer consistency
+    lda  0,y
+    sta  0,x  
+    lda  1,y
+    sta  1,x
+    cli             ; force timer consistency end
+    ldy  dolr
+    rts
+    
+getary:             ; get array variable
+    jsr  convp_array
+    lda  (0,x)
+    pha
+    inc  0,x
+    bne  getval4
+    inc  1,x
+getval4:
+    lda  (0,x)
+    sta  1,x        ; store high-byte of term value
+    pla
+getval5:
+    sta  0,x        ; store low-byte of term value
+getrts:
+    rts
+    
+peek:               ; memory access?
+    sty  dolr
+    ldy  #0
+    lda  (lthan),y  ;     access memory byte at ({<})
+    ldy  dolr
+    sta  0,x
+    lda  #0
+    sta  1,x
+    rts
+
+gotomark:           ; special line # 65280 + 
+    sta  0,x        ; low = stack/label
+    lda  #$ff
+    sta  1,x        ; 65280
+    rts
+
+in_chr:             ; user char input?
+    jsr  inch       ; input one char
+    sta  0,x
+    lda  #0
+    sta  1,x
+    rts
+
+in_val:             ; user line input
+    tya
+    pha
+    jsr  inln       ; input value from user
+    jsr  cvbin
+    pla
+    tay
+    rts             ; skip over "?" and return
+
+;-----------------------------------------------------;
+; Set var[x] to the address of the variable named in a
+; entry:   a holds variable name, @[y] -> text holding
+;            array index expression (if a = ':')
+; uses:    eval, {@ &}
+; exit:    (eq): var[x] -> variable, @[y] unchanged
+;          (ne): var[x] -> array element,
+;                @[y] -> following text
+;
+convp:
+    cmp  #':'       ; array element?
+    bne  simple     ;   no: var[x] -> simple variable
+convp_array:
+    jsr  eval       ;   yes: evaluate array index at
+    asl  0,x        ;     @[y] and advance y
+    rol  1,x
+    bcs  cverr      ; pointer exceeds address range
+    lda  ampr       ;     var[x] -> array element
+    adc  0,x        ;       at address 2*index+&
+    sta  0,x
+    lda  ampr+1
+    adc  1,x
+    sta  1,x
+    bcs  cverr      ; pointer wrap around
+    cmp  star+1     ; pointer within array RAM ?
+    bcs  cverr
+    bne  cvend
+    lda  0,x
+    cmp  star
+    bcs  cverr
+cvend:
+    rts
+cverr:              ; array variable outside & to *
+    lda  #$f0
+    jmp  verrcr
+; The following section is designed to translate the
+;   named simple variable from its ASCII value to its
+;   zero-page address.  In this case, 'A' translates
+;   to $82, '!' translates to $c2, etc.  The method
+;   employed must correspond to the zero-page equates
+;   above, or strange and not-so-wonderful bugs will
+;   befall the weary traveller on his or her porting
+;   journey.
+simple:
+    asl  a          ; form simple variable address
+    ora  #$80       ; mapping function is (a*2)|128
+    sta  0,x
+    lda  #0
+    sta  1,x
+    rts
+;-----------------------------------------------------;
+; 16-bit unsigned multiply routine: var[x] *= var[x+2]
+; exit:    overflow is ignored/discarded, var[x+2] and
+;          {>} are modified, a = 0
+;
+op_mul:
+    lda  0,x
+    sta  gthan
+    lda  1,x        ; {>} = var[x]
+    sta  gthan+1
+    lda  #0
+    sta  0,x        ; var[x] = 0
+    sta  1,x
+mul2:
+    lda  gthan
+    ora  gthan+1
+    beq  mulrts     ; exit early if {>} = 0
+    lsr  gthan+1
+    ror  gthan      ; {>} /= 2
+    bcc  mul3
+    clc             ; inline plus
+    lda  0,x
+    adc  2,x
+    sta  0,x
+    lda  1,x
+    adc  3,x
+    sta  1,x        ; end inline
+mul3:
+    asl  2,x
+    rol  3,x        ; left-shift var[x+2]
+    lda  2,x
+    ora  3,x        ; loop until var[x+2] = 0
+    bne  mul2
+mulrts:
+    jmp  eval_gb
+;-----------------------------------------------------;
+; var[x] += var[x+2]
+;
+op_plus:
+    clc
+    lda  0,x
+    adc  2,x
+    sta  0,x
+    lda  1,x
+    adc  3,x
+    jmp  op_ret
+;-----------------------------------------------------;
+; var[x] -= var[x+2]
+; expects:  (cs)
+;
+op_minus:
+    lda  0,x
+    sbc  2,x    
+    sta  0,x    
+    lda  1,x    
+    sbc  3,x    
+    jmp  op_ret
+;-----------------------------------------------------;
+; var[x] &= var[x+2]
+; expects:  -
+;
+op_and:
+    lda  0,x
+    and  2,x    
+    sta  0,x    
+    lda  1,x    
+    and  3,x    
+    jmp  op_ret
+;-----------------------------------------------------;
+; if var[x] > 0 then var[x] = var[x+2]
+;
+op_then:
+    lda  0,x
+    ora  1,x
+    beq  eval_gb
+else_true:
+    lda  2,x
+    sta  0,x
+    lda  3,x
+    jmp  op_ret
+;-----------------------------------------------------;
+; Apply the binary operator in a to var[x] and var[x+2]
+; Valid VTL02C operators are {* + / [ ] - | ^ & < = >}
+; {>} is defined as greater than _or_equal_
+; An undefined operator will be interpreted as one of
+;   the three comparison operators
+;
+notdn:
+    pha             ; stack alleged operator
+    inx             ; advance the argument stack
+    inx             ;   pointer
+    jsr  getval     ; arg[x+2] = value of next term
+    dex
+    dex
+    pla             ; retrieve and apply the operator
+oper:
+    cmp  #'/'       ; division operator?
+    bcs  op_byp1
+    cmp  #'+'       ; addition operator?
+    beq  op_plus
+    cmp  #'*'       ; multiplication operator?
+    beq  op_mul
+    cmp  #'-'       ; subtraction operator?
+    beq  op_minus
+    cmp  #'&'       ; bit-wise and operator?
+    beq  op_and
+  if OP_OR < '/'
+    cmp  #OP_OR     ; bit-wise or operator?
+    beq  op_or
+  endif
+op_byp1:
+    beq  op_div
+    cmp  #'['       ; "then" operator?
+    bcc  op_byp2
+    beq  op_then
+    cmp  #']'       ; "else" operator?
+    bne  op_ext
+;-----------------------------------------------------;
+; if var[x] = 0 then var[x] = var[x+2] else var[x] = 0
+;
+op_else:
+    lda  0,x
+    ora  1,x
+    beq  else_true
+    lda  #0
+    sta  0,x
+    jmp  op_ret
+
+op_byp2:
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Apply comparison operator in a to var[x] and var[x+2]
+;   and place result in var[x] (1: true, 0: false)
+; expects:  (cs)
+;
+    eor  #'<'       ; 0: '<'  1: '='  2: '>'
+    sta  gthan      ; other values in a are undefined,
+    sec
+    lda  0,x        ; inline minus
+    sbc  2,x    
+    sta  0,x    
+    lda  1,x    
+    sbc  3,x    
+    sta  1,x        ; end inline
+    dec  gthan      ; var[x] -= var[x+2]
+    bne  oper8b     ; equality test?
+    ora  0,x        ;   yes: 'or' high and low bytes
+    beq  oper8c     ;     (cs) if 0
+    clc             ;     (cc) if not 0
+oper8b:
+    lda  gthan
+    rol  a
+oper8c:
+    adc  #0
+    and  #1         ; var[x] = 1 (true), 0 (false)
+    sta  0,x
+    lda  #0
+op_ret
+    sta  1,x        ; store result high
+eval_gb:
+    lda  (at),y     ; get next operator
+    beq  evalrts
+    cmp  #';'       ; statement delimiter ?
+    beq  evalrts
+    iny             ; skip over any space char(s)
+    cmp  #')'       ;   no: skip over the operator
+    bne  notdn      ;     and continue the evaluation
+evalrts:
+    rts             ;   yes: return with final result
+;-----------------------------------------------------;
+; var[x] |= var[x+2]
+; expects:  -
+;
+op_or:
+    lda  0,x
+    ora  2,x    
+    sta  0,x    
+    lda  1,x    
+    ora  3,x    
+    jmp  op_ret
+;-----------------------------------------------------;
+; continue shift & logic ops
+op_ext:
+  if OP_OR > '/'
+    cmp  #OP_OR     ; bit-wise or operator?
+    beq  op_or
+  endif
+    cmp  #'^'       ; bit-wise xor operator?
+    beq  op_xor
+    cmp  #'}'       ; shift right operator?
+    beq  op_shr
+    cmp  #'{'       ; shift left operator ?
+    beq  op_shl
+    bne  op_byp2    ; continue with default comparison
+;-----------------------------------------------------;
+; 16-bit unsigned division routine
+;   var[x] /= var[x+2], {%} = remainder, {>} modified
+;   var[x] /= 0 produces {%} = var[x], var[x] = 65535
+;
+op_div:
+    lda  #0
+    sta  remn       ; {%} = 0
+    sta  remn+1
+    lda  #16
+    sta  gthan      ; {>} = loop counter
+div1:
+    asl  0,x        ; var[x] is gradually replaced
+    rol  1,x        ;   with the quotient
+    rol  remn       ; {%} is gradually replaced
+    rol  remn+1     ;   with the remainder
+    lda  remn
+    cmp  2,x
+    lda  remn+1     ; partial remainder >= var[x+2]?
+    sbc  3,x
+    bcc  div2
+    sta  remn+1     ;   yes: update the partial
+    lda  remn       ;     remainder and set the
+    sbc  2,x        ;     low bit in the partial
+    sta  remn       ;     quotient
+    inc  0,x
+div2:
+    dec  gthan
+    bne  div1       ; loop 16 times
+sop_ret
+    jmp  eval_gb
+;-----------------------------------------------------;
+; var[x] shifted right by var[x+2] bits
+;
+op_shr1:
+    lsr  1,x
+    ror  0,x
+op_shr:
+    dec  2,x
+    bpl  op_shr1
+    bmi  eval_gb
+;-----------------------------------------------------;
+; var[x] shifted left by var[x+2] bits
+;
+op_shl1:
+    asl  0,x
+    rol  1,x
+op_shl:
+    dec  2,x
+    bpl  op_shl1
+    bmi  eval_gb
+;-----------------------------------------------------;
+; var[x] ^= var[x+2]
+; expects:  -
+;
+op_xor:
+    lda  0,x
+    eor  2,x    
+    sta  0,x    
+    lda  1,x    
+    eor  3,x    
+    jmp  op_ret
+;-----------------------------------------------------;
+; If text at @[y] is a decimal constant, translate it
+;   into var[x] (discarding any overflow) and update y
+; entry:   @[y] -> text containing possible constant;
+;            leading space characters are skipped, but
+;            any spaces encountered after a conversion
+;            has begun will end the conversion.
+; used by: user:, synval:
+; uses:    var[x], var[x+2], linbuf[y], {> ?}
+; exit:    (ne): var[x] = constant, y -> next char
+;          (eq): var[x] = 0, y unchanged
+;          (cs): in all but the truly strangest cases
+;
+cvbin:
+    lda  #0
+    sta  0,x        ; var[x] = 0
+    sta  1,x
+cvb_gb1:            ; inline getbyte
+    sty  ques       ; save pointer
+    lda  linbuf,y
+    iny             ; skip over any space char(s)
+    cmp  #' '       ; is space?
+    beq  cvb_gb1    ; end inline
+cvb_gb2:            ; skip multiply & add for 1st digit
+    eor  #'0'       ; if char at @[y] is not a
+    cmp  #10        ;   decimal digit then stop
+    bcs  cvbin1     ;   the conversion
+    sta  0,x
+cvbin2:
+    lda  linbuf,y   ; grab a char
+    eor  #'0'       ; if char at @[y] is not a
+    cmp  #10        ;   decimal digit then stop
+    bcs  cvbin3     ;   the conversion
+    pha             ; save decimal digit
+    lda  1,x        ; inline multiply by 10 
+    sta  gthan+1
+    lda  0,x
+    sta  gthan
+    asl  a
+    rol  1,x
+    asl  a
+    rol  1,x
+    clc
+    adc  gthan
+    sta  0,x
+    lda  1,x
+    adc  gthan+1
+    asl  0,x
+    rol  a
+    sta  1,x        ; end inline
+    pla             ; retrieve decimal digit
+    clc             ; inline add digit
+    adc  0,x
+    sta  0,x
+    bcc  cvbin4
+    inc  1,x
+cvbin4:             ; end inline
+    iny             ; loop for more digits
+    bpl  cvbin2     ;   (with safety escape)
+cvbin1:
+    dey
+cvbin3:
+    cpy  ques       ; (ne) if valid, (eq) if not
+    rts
+;-----------------------------------------------------;
+; Accept input line from user and store it in linbuf,
+;   zero-terminated (allows very primitive edit/cancel)
+; used by: user:, usr:
+; uses:    inch:, outch:, linbuf
+; exit:    y = 0
+;
+inln:
+    ldy  #0
+inlnlp:             ; main loop
+    jsr  inch       ; get (and echo) one key press
+    cmp  #BS        ; backspace?
+    beq  inlnbs     ;   yes: delete previous char
+    cmp  #ESC       ; escape?
+    beq  inlnesc    ;   yes: discard entire line
+    cmp  #$0d       ; cr?
+    beq  inlncr
+    cmp  #' '       ; do not store ctrl keys
+    bcc  inlnlp
+    sta  linbuf,y   ; put key in linbuf
+    iny
+    bpl  inlnlp     ; loop if < len(linbuf)
+    lda  #BS        ; hold at end of buffer
+    jsr  outch
+inlnbs:
+    dey             ; backspace
+    bpl  inlnlp     
+    lda  #13        ; hold at begin of buffer
+    jsr  outch
+    iny
+    bpl  inlnlp
+inlncr:              
+    lda  #0         ; cr - mark end of line
+    sta  linbuf,y
+    tay             ; y = 0
+    rts
+inlnesc:
+    cpy  #0         ; escape - reverse all input
+    beq  inlnlp
+    lda  #BS
+inlnesc1:
+    jsr  outch
+    dey
+    bne  inlnesc1
+    beq  inlnlp    
+;-----------------------------------------------------;
+; Find the first/next stored program line >= {#}
+; entry:   (cc): start search at program beginning
+;          (cs): start search at next line
+;          ({@} -> beginning of current line)
+; used by: skp2:, findln:
+; uses:    prgm, {@ # & (}
+; exit:    (cs): {@}, x:a and {(} undefined, y = 3
+;          (cc): {@} -> beginning of found line, y = 3,
+;                x:a = {(} = actual found line number
+;
+find:
+    ldx  #hi(prgm)
+    lda  #lo(prgm)
+    bcc  find1st    ; cc: search begins at first line
+    ldx  at+1
+    ldy  #3
+findnxt:
+    lda  at
+    cmp  ampr
+    lda  at+1
+    sbc  ampr+1     ; {@} >= {&} (end of program)?
+    bcs  findrts    ;   yes: search failed (cs)
+find3:
+    lda  at
+    adc  (at),y     ;   no: {@} -> next line
+    bcc  find5
+    inx
+find1st:
+    stx  at+1
+find5:
+    sta  at
+    ldy  #1
+    lda  (at),y
+    sta  lparen     ; {(} = current line number
+    cmp  pound      ;   (invalid if {@} >= {&}, but
+    iny             ;   we'll catch that later...)
+    lda  (at),y
+    sta  lparen+1
+    sbc  pound+1    ; if {(} < {#} then try the next
+    iny             ;   program line
+    bcc  findnxt
+    lda  at         ; {@} >= {&} (end of program)?
+    cmp  ampr       ;   yes: search failed (cs)
+    lda  at+1       ;   no: search succeeded (cc)
+    sbc  ampr+1
+    lda  lparen
+    ldx  lparen+1
+findrts:
+    rts
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;    
+; pre-process and check new program lines
+;   while moving linbuf,y -> prgbuf,x create header,
+;   strip blanks, convert numbers, check syntax 
+;   uses: argument stack
+;
+syntax:
+    php
+    lda  linbuf     ; initialize label
+    cmp  #$60       ; is label ?
+    bcs  syntx1     ;   yes: store label
+    lda  #' '       ;   no:  store space  
+syntx1:
+    sta  prgbuf
+    lda  pound      ; store line number
+    sta  prgbuf+1
+    lda  pound+1
+    sta  prgbuf+2
+    lda  #0         ; clear
+    sta  arg        ;       error number
+    sta  arg+3      ;       parenthesis match count
+    ldx  #4         ; initialize prgbuf text index
+synlp1:
+    sty  arg+4      ; save pointer to left side var
+    lda  linbuf,y   ; check left side of equation
+    beq  synend1
+    cmp  #')'       ; is full line comment ?
+    beq  synend1
+    cmp  #';'       ; no statement delimiter
+    beq  synerr1
+    cmp  #'('       ; no left parenthesis
+    beq  synerr1
+    cmp  #'0'       ; is numeric
+    bcc  synvlr     ; valid range if lower
+    cmp  #'9'+1
+    bcc  synerr1
+    cmp  #$60       ; is lower case ?
+    bcc  synvlr     ; valid range if upper case
+synerr1:
+    lda  #$f3       ; invalid or missing target var
+    jsr  syn_err
+    lda  linbuf,y
+synvlr:
+    iny
+    cmp  #' '       ; discard space
+    beq  synlp1
+    sta  prgbuf,x   ; is valid left side
+    inx
+    cmp  #':'       ; is array var
+    bne  synaray
+    jsr  syn_evalp  ; evaluate array index
+    lda  arg+3      ; test parenthesis matched
+    beq  synaray
+    jsr  syn_errp   ; missing closing parenthesis
+    lda  #0         ; clear parenthesis match count
+    sta  arg+3
+synaray:
+synlp2:
+    lda  linbuf,y   ; equation or implied ?
+    beq  synerr3
+    cmp  #'='
+    bne  syndbl
+    sta  prgbuf,x
+    inx
+synlp3:
+    iny
+    lda  linbuf,y   ; check for string
+    cmp  #' '
+    beq  synlp3
+    cmp  #'"'
+synend1:
+    beq  synend
+syndbl1:
+    jsr  syn_eval
+    cmp  #';'
+    bne  syndbl2
+    sta  prgbuf,x
+    iny
+    inx
+syndbl2:
+    lda  arg+3      ; matching parenthesis
+    beq  synlp1
+    bmi  synend     ; extra closing p. = comment
+    jsr  syn_errp   ; missing closing parenthesis
+    lda  #0         ; clear parenthesis match count
+    sta  arg+3
+    beq  synlp1
+; doubles variable & operator A+B -> A=A+B
+syndbl:
+    iny
+    cmp  #' '       ; discard space
+    beq  synlp2     
+    lda  #'='       ; insert equal
+    sta  prgbuf,x
+    inx
+    ldy  arg+4      ; repeat variable & operator
+    tya
+    clc             ; test buffer will not overlap
+    adc  #$20
+    sta  arg+4
+    cpx  arg+4
+    bcc  syndbl1
+    lda  #$f7       ; buffers overlap error
+    jmp  verr
+
+synerr3:
+    lda  #$f2       ; invalid or missing operator
+    jsr  syn_err
+synend:
+    dex             ; copy string, comment or null
+    dey
+synendlp:
+    inx
+    iny
+    lda  linbuf,y
+    sta  prgbuf,x
+    bne  synendlp   ; loop for remaining line
+    inx
+    stx  prgbuf+3   ; store line length
+    lda  arg        ; any syntax error ?
+    beq  synexit
+    ldy  arg+2      ; show error pointer
+synerptr:
+    cpy  #0
+    beq  synerrp1
+    lda  #' '
+    jsr  outch
+    dey
+    bne  synerptr
+synerrp1:
+    lda  #'^'
+    jsr  outch
+    lda  arg        ; show error message
+    sta  prgbuf
+    ldx  #msgerr
+    jsr  verrs
+    lda  prgbuf+1   ; restore line number
+    sta  pound
+    lda  prgbuf+2
+    sta  pound+1
+    plp             ; direct mode ?
+    bne  synexit1   ;   no:  store line
+    clc             ;   yes: do not execute
+    jmp  reset
+synexit:
+    plp
+synexit1:
+    rts    
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Replaces decimal with binary constants in linbuf
+; to avoid runtime conversion.
+; < 125 = 1 byte $80-$FC ($80 + binary number)
+; > 124 = 3 bytes $FF $0101-$FFFF
+;   if low  byte is $00 then 2 bytes $FE $01-$FF
+;   if high byte is $00 then 2 bytes $FD $01-$FF
+;
+syn_val:
+    txa             ; expects value or variable
+    pha
+    ldx  #equal     ; cvbin converts to equal var
+    jsr  cvbin      ; convert if decimal
+    beq  syn_var    ; not a value
+    pla             ; convert to constant
+    tax
+    lda  equal+1
+    bne  syn_val1   ; is > 256
+    lda  equal
+    cmp  #125
+    bcs  syn_val1   ; is > 125
+    ora  #$80       ; is one byte constant
+    sta  prgbuf,x
+    inx
+    rts
+syn_val1:
+    lda  #$ff       ; preset 3 byte constant
+    sta  prgbuf,x
+    inx
+    lda  equal
+    bne  syn_val2
+    dec  prgbuf-1,x ; mark low byte is null
+    lda  equal+1    ; store high byte
+syn_val3:
+    sta  prgbuf,x
+    inx
+    rts
+syn_val2:
+    sta  prgbuf,x   ; store low byte
+    inx
+    lda  equal+1
+    bne  syn_val3
+    dec  prgbuf-2,x ; mark high byte is null
+    dec  prgbuf-2,x
+    rts
+syn_var:
+    pla
+    tax
+    lda  linbuf,y
+    beq  syn_varx   ; unexpected end of line
+    cmp  #';'       ;      "      "  of statement
+    beq  syn_varx
+    cmp  #')'       ;      "      "  of subexpression
+    beq  syn_varx
+    sta  prgbuf,x
+    inx
+    iny
+    cmp  #'('       ; sub expression ?
+    beq  syn_evalp
+    cmp  #':'       ; array variable ?
+    beq  syn_evalp
+    rts
+syn_varx:
+    lda  #$f4       ; value or variable missing
+
+syn_err:
+    pha             ; set syntax error
+    lda  arg
+    bne  syn_err1   ; skip if already set
+    pla
+    sta  arg
+    sty  arg+2
+    rts
+syn_err1:
+    pla
+    rts   
+
+syn_evalp:
+    lda  arg+3      ; is 1st opening parenthesis ?
+    bne  syn_evalp1
+    sty  arg+1      ; save pointer
+syn_evalp1:
+    inc  arg+3      ; +1 open parenthesis
+syn_eval:
+    jsr  syn_val
+syn_eval1:
+    lda  linbuf,y
+    beq  syn_evalx  ; if end of line
+    cmp  #';'       ; end of statement ?
+    beq  syn_evalx
+    iny
+    cmp  #' '       ; skip over space
+    beq  syn_eval1
+    sta  prgbuf,x
+    inx
+    cmp  #')'       ; end of sub expression ?
+    beq  syn_evalx2
+    stx  arg+5
+    ldx  #vld_ops_x ; valid operator ?
+syn_oper:
+    cmp  vld_ops,x
+    beq  syn_operok ; operator found
+    dex
+    bpl  syn_oper   ; loop until end of valid ops
+    dey
+    lda  #$f2       ; invalid operator
+    jsr  syn_err
+    iny
+syn_operok:    
+    ldx  arg+5      ; next value or variable
+    bne  syn_eval
+syn_evalx2:
+    dec  arg+3      ; -1 open parenthesis
+syn_evalx:
+    rts
+
+syn_errp:
+    lda  arg        ; set open parenthesis error
+    bne  syn_errp1  ; skip if already set
+    lda  #$f5
+    sta  arg
+    dec  arg+1      ; pointer to opening parenthesis
+    lda  arg+1
+    sta  arg+2
+syn_errp1:
+    rts
+
+vld_ops:    
+    db   "+-*/<=>[]{}&^",OP_OR
+vld_ops_x = * - vld_ops - 1       
+;-----------------------------------------------------;
+; VTL message service & error messages
+;   verr: expects a = error number
+;   vmsg: expects x = message
+vmsg:
+    lda  msg,x      ; print message at x
+    beq  vmsgx      ; end if 0
+    jsr  outch
+    inx
+    bne  vmsg
+vmsgx:
+    rts
+verrs:
+    sta  arg        ; print error with number
+    jsr  vmsg
+    sta  arg+1
+    ldx  #arg
+    jsr  prnum
+    lda  pound      ; test direct mode 
+    ora  pound+1
+    beq  verrx
+    ldx  #msgiln    ; print line number
+    jsr  vmsg
+    ldx  #pound
+    jsr  prnum
+verrx:
+    jmp  outnl
+verrcr:
+    ldx  #msgerr
+    bne  verr1    
+verr:
+    ldx  #msgerr+1
+verr1:
+    jsr  verrs      ; print error & stop
+    clc
+    jmp  reset
+msg:
+msgvtl = 0
+    db 13,"VTL02sg",0
+msgok  = *-msg
+    db 13,"OK",13,0
+msgerr = *-msg
+    db 13,"Error ",0
+msgiln = *-msg
+    db " in line ",0
+    
+;============ Original I/O subroutines ===============;
+;-----------------------------------------------------;
+; Check for user keypress and return with (cc) if none
+;   is pending.  Otherwise, fall through to inch
+;   and return with (cs).
+; 6 bytes
+;inkey:
+;    lda  KBD        ; is there a keypress waiting?
+;    asl
+;    bcc  outrts     ;   no: return with (cc)
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Read key from stdin into a, echo, (cs)
+; drop stack and abort to "OK" prompt if ctrl-C
+; 16 bytes
+;inch:
+;    sty  dolr       ; save y reg
+;    jsr  KEYIN      ; get a char from keyboard
+;    ldy  dolr       ; restore y reg
+;    and  #$7f       ; strip apple's hi-bit
+;    cmp  #$03       ; ctrl-C?
+;    bne  outch      ;   no: echo to terminal
+;    jmp  start      ;   yes: abort to "OK" prompt
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Print ASCII char in a to stdout, (cs)
+; 9 bytes
+;outch:
+;    pha             ; save original char
+;    ora  #$80       ; apples prefer "high" ASCII
+;    jsr  COUT       ; emit char via apple monitor
+;    pla             ; restore original char
+;    sec             ; (by contract with callers)
+;outrts:
+;    rts
+;-----------------------------------------------------;
+;======== 2m5 SBC emulator I/O subroutines ===========;
+timr_adr = timr_var*2|$80
+;-----------------------------------------------------;
+; Check for user keypress and return if none
+;   is pending.  Otherwise, check for ctrl-C and
+;   return after next keypress.
+;
+inkey:
+    lda  acia_rx    ; Is there a character waiting?
+    beq  inkeyr     ;   no: return
+    jsr  test_abort
+inkeyp:
+    lda  acia_rx    ; pause until next key
+    beq  inkeyp
+    jsr  test_abort
+inkeyr:
+    rts
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Read key from stdin into a, echo, (cs)
+; Dump stack and abort to "OK" prompt if ctrl-C
+;
+inch:
+    lda  acia_rx    ; get character from rx register
+    beq  inch       ; wait for character !=0
+    sty  dolr       ; save y reg
+    cmp  #127       ; convert delete to backspace
+    bne  conv_bs2del
+    lda  #8
+conv_bs2del:
+    cmp  #27        ; escape?
+    bne  skip_esc_no
+    lda  timr_adr   ; wait 5*10ms
+    clc
+    adc  #5
+skip_esc_wait:  
+    cmp  timr_adr   ; wait loop
+    bne  skip_esc_wait
+    ldy  #0
+skip_esc_discard:  
+    iny             ; any data = y > 1
+    lda  acia_rx
+    bne  skip_esc_discard
+    cpy  #1
+    bne  inch       ; discard escape sequence
+    lda  #27        ; escape only - send to vtl  
+skip_esc_no
+    ldy  dolr       ; restore y reg
+inch2:
+    and  #$7f       ; ensure char is positive ascii
+    jsr  test_abort
+    cmp  #BS        ; only echo printable, bs & cr
+    beq  outch
+    cmp  #13
+    beq  outch
+    cmp  #' '
+    bcs  outch
+    sec             
+    rts
+
+test_abort:
+    cmp  #3         ; is ctrl-c
+    beq  istart     ;   yes: abort to OK prompt
+    cmp  #$1a       ; is ctrl-z
+    beq  abort      ;   yes: exit to monitor
+    rts
+abort:
+    jsr  outcr
+    lda  #$80       ; exit to monitor
+    sta  diag
+    lda  #ESC       ; escape after continue
+    rts
+istart:
+    jmp  start      ;   yes: abort to "OK" prompt
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Print ascii char in a to stdout, (cs)
+;
+outch:
+    cmp  #13        ; add line feed to carriage return
+    bne  skip_cr
+    lda  #10
+    sta  acia_tx
+outcr:
+    lda  #13
+skip_cr:
+    cmp  #8         ; backspace?
+    bne  skip_bs
+    sta  acia_tx    ; make erasing backspace
+    lda  #' '
+    sta  acia_tx
+    lda  #8
+skip_bs:
+    sta  acia_tx    ; emit char via transmit register
+    sec             ; (by contract with callers)
+    rts
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Load a program from EEPROM by number in x
+;
+load:
+    lda  #0         ; setup dma control block
+    sta  dma_cmd
+    stx  dma_dat    ; program #
+    lda  #lo(prgm)  ; from
+    sta  dma_dat
+    sta  ampr       ; & new
+    lda  #hi(prgm)
+    sta  dma_dat
+    sta  ampr+1
+    lda  #7         ; load eep command
+    sta  dma_cmd
+    lda  dma_sta    ; get status
+    cmp  #$17
+    bne  ldsv_fail
+    lda  dma_dat    ; get end of program address
+    sta  ampr
+    lda  dma_dat
+    sta  ampr+1
+    jmp  reset      ; clear label array and gosub stack
+ldsv_fail:
+    jmp  verrcr     ; error message
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Save a program to EEPROM by number in x
+;
+save:
+    lda  #0         ; setup dma control block
+    sta  dma_cmd
+    stx  dma_dat    ; program #
+    lda  #lo(prgm)  ; from
+    sta  dma_dat
+    lda  #hi(prgm)
+    sta  dma_dat
+    lda  ampr       ; to
+    sta  dma_dat
+    lda  ampr+1
+    sta  dma_dat
+    lda  #6         ; save eep command
+    sta  dma_cmd
+    lda  dma_sta    ; get status
+    cmp  #$16
+    bne  ldsv_fail
+    jmp  start
+; - - - - - - - - - - - - - - - - - - - - - - - - - - ;
+; Update a variable with the 10ms timer
+;
+IRQ_10ms:
+    pha
+    inc  timr_adr   ; increment the variable {/}
+    bne  IRQ_exit
+    inc  timr_adr+1
+IRQ_exit:
+    lda  #1         ; clear interrupt flag
+    sta  timr_fl
+    pla
+    rti
+; Start the timer prior to VTL
+IRQ_start:
+    lda  #1         ; set bit 0 (10ms tick)
+    sta  timr_ie    ; -> interrupt enable
+    cli
+    jmp  vtl02c     ; continue cold start
+;-----------------------------------------------------;
+    org  $fffc
+    dw   IRQ_start  ; reset vector -> cold start
+    dw   IRQ_10ms   ; interrupt vector -> 10ms update
+    end  IRQ_start  ; set start address
