@@ -7,3 +7,4 @@ There are two files you need to load using the KIM-1 monitor.
 - a1b.mos: This file contains an image of the Apple 1 Integer BASIC relocated from $E000 down to $8000.
 - a1b_ptch.mos:: This is a patch file that patches a few locations in the ROM image and also includes enhanced startup and input / output routines used by A1B
 
+Load these in that order so that a few patches overwrite the original values and start with the command `8000<space>G`.
