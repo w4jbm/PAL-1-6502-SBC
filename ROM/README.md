@@ -47,7 +47,7 @@ Program | Address
 Apple 1 Integer BASIC | $A000
 eWoz Monitor | $B000
 PBUG Monitor | $B400
-VTL-02 | $D800
+VTL-02 | $D700
 
 
 ## Reporting Bugs or Requesting Features
