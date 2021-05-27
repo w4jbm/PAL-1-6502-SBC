@@ -1,0 +1,335 @@
+; This is a simple loader that copies 'traditional' KIM-1/PAL-1
+; programs out of ROM, into RAM, and starts them.
+;
+; It is designed to be used with a 16K ROM board located at $A000.
+;
+; Copyright (C) 2021 by Jim McClanahan, W4JBM (April 2021)
+;
+; Build with:
+; $ 64tass --intel-hex romload.a65 -o romload.hex -m --verbose-list -L romload.lst
+;
+; For tests when built at $6000, use:
+; $ srec_cat romload.hex -intel -o romload.mos -MOS_Technologies -CRLF
+; $ cp romload.mos ~
+;
+; For EPROM image when built at $A000, use:
+; $ cp romload.hex romload.org
+; $ srec_cat romload.org -intel -offset -0xA000 -o romload.hex -intel -CRLF
+; $ minipro -p M27C256B@DIP28 -b
+; $ minipro -p M27C256B@DIP28 -w romload.hex
+;
+; Known Issues:
+;  - The way the end address is determined actually copies one extra byte from
+;    ROM because the end address is actually set to the next empty location
+;    (not the last filled location).
+;
+; Define the KIM ROM routines we will use...
+;
+; A routine to send a byte to the console...
+xOutch     = $1EA0
+;
+; A routine to get a byte from the console...
+xGetch     = $1E5A
+;
+; ...and the reset vector to restart the system.
+xStart     = $1C4F
+
+;
+; Define the Page Zero Locations we will use...
+;
+; We avoide the KIM's monitor, but other than that this probably
+; isn't critical since whatever we load will likely initialize
+; most of Page Zero for it's own use.
+;
+SADDR      = $E0             ; Start Address
+EADDR      = SADDR + 2       ; End Address
+DADDR      = EADDR + 2       ; Destination Address
+
+;
+; Define any constants we want to use...
+;
+CR         = $0D
+LF         = $0A
+
+;
+; PAL-1/KIM Hardware addresses used
+;
+SBD        = $1742           ; PAL-1 RIOT B Data Register
+
+;
+; We will be entering from the monitor, so we can assume that the stack
+; and other items have been initialized as needed.
+;
+; Can test at other locations, but eventually ends up in ROM at $A000.
+; The upper 16K of the RAM card starts at $6000 and can be used for
+; testing.
+;
+*          = $A000
+
+;
+; We have a small vector table at the start that points to the routine
+; that queries which program to start or we can directly start one of
+; the available images.
+;
+START:     JMP START2        ; We have a small vector table at the start...
+           JMP LOAD_B        ; Jump here to load BASIC
+           JMP LOAD_F        ; Jump here to load FORTH
+           JMP RESET         ; Jump here to entery eWoz
+           JMP MTCOPY        ; Jump here to load Memory Test
+
+;
+; Set things up, print the welcome message, print the prompt,
+; and get the user input...
+;
+START2:	   CLD
+           LDX #$FF	; Set up stack
+	   TXS
+           LDA #<MSG1
+           STA SADDR+0
+           LDA #>MSG1
+           STA SADDR+1
+           JSR SHWMSG
+
+LOOP:      LDA #<MSG2
+           STA SADDR+0
+           LDA #>MSG2
+           STA SADDR+1
+           JSR SHWMSG
+
+           JSR xGetch  ; Get a character from the keyboard
+           AND  #$5F   ; Mask to force upper case
+
+;
+; Check to see if a 'B' was typed. If so, copy BASIC image from
+; ROM into RAM and start it. Otherwise skip around this.
+;
+CHK_B:     CMP #"B"          ; Start BASIC?
+           BNE CHK_F
+
+LOAD_B:    CLD              ; Needed for direct jump to BASIC
+           LDA #<MSG3       ; If so, print message
+           STA SADDR+0
+           LDA #>MSG3
+           STA SADDR+1
+           JSR SHWMSG
+
+           LDA #<basic_start ; Point to start in ROM
+           STA SADDR+0
+           LDA #>basic_start
+           STA SADDR+1
+
+           LDA #<basic_finish ; Point to end in ROM
+           STA EADDR+0
+           LDA #>basic_finish
+           STA EADDR+1
+
+           LDA #$00   ; Point to destination ($2000)
+           STA DADDR+0
+           LDA #$20
+           STA DADDR+1
+
+           JSR COPY  ; Move source to destination
+
+; NOTE: You could apply patches here if needed. I have included
+;       the patch to handle backspace in the data file since
+;       most people will be using a terminal (not a teletype).
+
+           JMP $4065         ; And start BASIC
+
+;
+; Check to see if an 'F' was typed. If so, copy FORTH image from
+; ROM into RAM and start it. Otherwise skip around this.
+;
+CHK_F:     CMP #"F"          ; Start Forth?
+           BNE CHK_Z
+
+LOAD_F:    CLD               ; Needed for direct jump to FORTH
+           LDA #<MSG4        ; If so, print message
+           STA SADDR+0
+           LDA #>MSG4
+           STA SADDR+1
+           JSR SHWMSG
+
+           LDA #<forth_start ; Point to start in ROM
+           STA SADDR+0
+           LDA #>forth_start
+           STA SADDR+1
+
+           LDA #<forth_finish ; Point to end in ROM
+           STA EADDR+0
+           LDA #>forth_finish
+           STA EADDR+1
+
+           LDA #$00          ; Point to destination ($2300)
+           STA DADDR+0
+           LDA #$23
+           STA DADDR+1
+
+           JSR COPY  ; Move source to destination
+
+; NOTE: You could apply patches here if needed.
+
+           CLD               ; Make sure we aren't in DEC mode
+
+           JMP $2300         ; And start FORTH
+
+;
+; Check to see if a 'Z' was typed. If so, start the eWoz
+; Monitor. If not, skip around this
+;
+CHK_Z:     CMP #"Z"          ; Start eWoz?
+           BNE CHK_M         ; If not, check for Memory Test
+
+LOAD_W:    LDA #<MSG5        ; If so, print message
+           STA SADDR+0
+           LDA #>MSG5
+           STA SADDR+1
+           JSR SHWMSG
+
+           JMP RESET
+
+;
+; Check to see if a 'M' was typed. If so, move the memory
+; test routine down to Page Zero and return to the PAL-1's
+; original monitor.
+;
+; Note: This option does not appear on the menu because it
+; is likely not going to be used that often.
+;
+CHK_M:     CMP #"M"          ; Load the memory test?
+           BNE CHK_X         ; If not, check for eXit
+
+LOAD_M:    LDA #<MSG6        ; If so, print message
+           STA SADDR+0
+           LDA #>MSG6
+           STA SADDR+1
+           JSR SHWMSG
+
+           JMP MTCOPY
+
+;
+; Check to see if an'X' was typed. If so, exit back to the
+; KIM's monitor.
+;
+CHK_X:     CMP #"X"          ; Exit to the monitor?
+           BEQ DOEXIT        ; If yes, do a reset
+           JMP LOOP          ; If not, go back and ask again
+
+DOEXIT     JMP xStart        ; Jump to the reset code of the KIM
+
+
+;
+; COPY will copy non-overlapping memory down from the ROM
+; and into RAM.
+;
+COPY:      LDY #0
+_COPY2:    LDA (SADDR),Y     ; copy from source
+           STA (DADDR),Y     ; to destination
+
+;
+; Check to see if the Start address (which is incremented as we
+; go) equals the End address.
+;
+           LDA SADDR+1       ; reached end yet?
+           CMP EADDR+1
+           BNE _NotFin
+           LDA SADDR+0
+           CMP EADDR+0
+           BNE _NotFin
+           RTS               ; Return when we're done
+
+_NotFin:   INC SADDR+0       ; Not finished, then increment Source (16 bits)
+           BNE _NoInc1       ; Do we need to increment upper byte?
+           INC SADDR+1
+
+_NoInc1:   INC DADDR+0       ; And increment the Destination (16 bits)
+           BNE _NoInc2
+           INC DADDR+1
+_NoInc2:   JMP _COPY2
+
+;
+; GetKey - Fetches character from keyboard and returns
+;          character in Accumulator
+;
+; This uses trickery to avoid the echo that usually
+; is done in hardware by the PAL-1 and KIM.
+;
+; Y register is preserved because it is used as the buffer
+; pointer by eWoz.
+;
+GetKey:    TYA               ; Save Y
+           STA SADDR+1
+           LDA SBD           ; Get the RIOT register
+           AND #$FE          ; Mask out low bit
+           STA SBD
+           JSR $1E5A         ; Call KIM GETCH routine. Returns char in A. Changes Y.
+           STA SADDR+0       ; Save A
+           LDA SBD           ; Get the RIOT register
+           ORA #1            ; Mask in low bit
+           STA SBD           ; And store it
+           LDA SADDR+1       ; Restore Y
+           TAY
+           LDA SADDR+0       ; Restore A
+           RTS
+
+;
+; OUTCRLF will display a carriage return and line feed
+;
+OUTCRLF:   TYA               ; Save Y
+           STA SADDR+1
+           LDA #CR           ; Load Carriage Return and print
+           JSR XOutch
+           LDA #LF           ; Load Line Feed and print
+           JSR XOutch
+           LDA SADDR+1       ; Restore Y
+           TAY
+           RTS
+
+;
+; SHWMSG will display a null delimited string to the console.
+;
+SHWMSG:    LDY #0            ; Show message subroutine
+           LDA (SADDR),Y     ; Load a character
+	   BEQ DONE          ; Did we just load a $00 end-of-string?
+           JSR xOutch        ; If not, print it
+           INC SADDR+0       ; increment the character pointer
+           BNE SHWMSG
+           INC SADDR+1
+           BNE SHWMSG
+        
+DONE:	   RTS               ; Jump here to return at end-of-string
+
+;
+; Messages to display...
+;
+MSG1:      .null CR,LF,"PAL-1 ROM Loader v1.0",CR,LF
+MSG2:      .null CR,LF,"(B)ASIC, (F)ORTH, eWo(z) Monitor, or e(X)it? "
+MSG3:      .null CR,LF,"Starting MS BASIC...",CR,LF
+MSG4:      .null CR,LF,"Starting FIG FORTH...",CR,LF
+MSG5:      .null CR,LF,"Starting eWoz Monitor...",CR,LF
+MSG6:      .null CR,LF,"Copying memory test (from First Book of KIM) to Page Zero...",CR,LF
+
+;
+; Load eWoz Monitor
+;
+.include "ewoz.a65"
+.include "memtest.a65"
+
+;
+; Files containing the images of the programs available
+;
+.include "kb9.a65"
+.include "ff.a65"
+
+;
+; The following files are dummy files used while working
+; to get eWoz running. They are not needed and cannot be
+; included in a final working version.
+;
+; Note that there is no logic yet to change jump vectors
+; if you try to start BASIC or FORTH so you will end up
+; jumping into what could be garbage.
+;
+;.include "no_kb9.a65"
+;.include "no_ff.a65"
+

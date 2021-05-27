@@ -1,0 +1,21 @@
+; This file is just a dummy file that replaces the
+; one containing Fig FORTH. It is used for testing
+; and development only.
+;
+; It prints a message and returns to the loader's
+; start.
+
+forth_start:
+
+           LDA #<NO_FIGF
+           STA SADDR+0
+           LDA #>NO_FIGF
+           STA SADDR+1
+           JSR SHWMSG
+
+           JMP START
+
+NO_FIGF:   .null CR,LF,"BASIC is not available.",CR,LF
+
+forth_finish:
+
