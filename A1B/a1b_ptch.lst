@@ -1,0 +1,176 @@
+
+; 64tass Turbo Assembler Macro V1.55.2200 listing file
+; 64tass --intel-hex -o a1b_ptch.hex -m --verbose-list -L a1b_ptch.lst a1b_ptch.a65
+; Sun May  9 13:58:47 2021
+
+;Offset	;Hex		;Source
+
+;******  Processing input file: a1b_ptch.a65
+
+			; Apple 1 BASIC Patch for PAL-1
+			;
+			; Copyright (c) 2021 by Jim McClanahan, W4JBM
+			;
+			; This builds on work by Steve Wozniak, Eric Smith, and Jeff Tranter.
+			;
+			; Although you can modify the source of Integer BASIC, since the
+			; source was reconstructed from disassemblies it can be a bit fragile.
+			;
+			; Because of that, I decided that I would build a patch file
+			; instead of directly modifying the Integer BASIC code. This
+			; obviously has its own share of issues, but I only expect to
+			; build two versions (one to run our of RAM and one to run
+			; out of ROM). Also I would expect most tweaks and changes I
+			; make in the future to be in my code, not the original.
+			;
+			; Build with:
+			; $ 64tass --intel-hex a1b_ptch.a65 -o a1b_ptch.hex -m --verbose-list -L a1b_ptch.lst
+			; $ unix2dos *.hex
+			; $ cp *.hex ~
+			;
+
+			; A few definitions first...
+
+=13			CR      = 13
+=10			LF      = 10
+
+=$4a			lomem   = $4A     ; lower limit of memory used by BASIC (2 bytes)
+=$4c			himem   = $4C     ; upper limit of memory used by BASIC (2 bytes)
+
+=$1e5a			GETCH   = $1E5A
+=$1ea0			OUTCH   = $1EA0
+
+=$1742			SBD     = $1742   ; PAL-1 RIOT B Data Register
+
+=$17e4			k_flag  = $17E4   ; Keyboard flags (for all caps and backspace)
+=$17e5			a_save  = $17E5   ; Used to save A when KIM's OUTCH routine is called
+=$17e6			y_save  = $17E6   ; Used to save Y when KIM ROM routines are called
+
+
+=$a000			base    = $A000 ; This is where the original object code is located
+
+			*       = base + $0000
+
+			; Jump to cold start through some initialization code instead
+
+.a000	4c 00 b3	START:  JMP startx
+
+			*       = base + $0003
+
+			; ReadKy is patched to use the KIM ROM routines
+
+.a003	4c 0e b3	READKY: JMP rdkeyx
+
+
+			; Output character routine is patched to use the KIM ROM routines
+
+			*       = base + $03D5
+
+.a3d5	4c 45 b3	LE3D5:  JMP Le3d5x
+
+
+			; There is a keyboard check for an interupt during running that
+			; we will ignore
+
+			*       = base + $086F
+
+.a86f	2c b1 b3	        BIT no_bits
+			;       NOP
+			;       NOP
+
+			; We can change where we point to as program memory here.
+			; By default, pages are lomem $08xx and himem $10xx.
+
+			;*       = $8FD9
+			;        LDA     #$20
+			;        STA     lomem+1         ; LOMEM defaults to $0800
+			;        LDA     #$30
+			;        STA     himem+1         ; HIMEM defaults to $1000
+
+			; That is all of the patches to the original source/object code.
+			;
+			; Now we have the extended routines.
+			;
+			; Note that we JMP to these but these RTS back to
+			; whereever they were originally called from.
+
+			* = base + $1300
+
+.b300	78		startx: SEI
+.b301	d8		        CLD
+.b302	a2 ff		        LDX     #$FF
+.b304	9a		        TXS
+.b305	8e e4 17	        STX     k_flag          ; By default, handle lower case and backspace
+.b308	20 7a b3	        JSR     SHWMSG
+.b30b	4c b0 a2	        JMP     base+$02B0      ; BASIC cold start entry point
+
+.b30e	8c e6 17	rdkeyx: STY     y_save          ; Save Y
+.b311	ad 42 17	        LDA     SBD             ; Get the RIOT register
+.b314	29 fe		        AND     #$FE            ; Mask out low bit
+.b316	8d 42 17	        STA     SBD             ; And store it
+.b319	20 5a 1e	        JSR     GETCH           ; Go get a character
+.b31c	2c e4 17	        BIT     k_flag          ; Do we want to enable lower to upper case conversion
+.b31f	50 0a		        BVC     nocnv
+.b321	c9 61		ISLOWR: CMP     #'a'            ; If so, check for lower case and...
+.b323	90 06			BCC     nocnv
+.b325	c9 7b			CMP     #'z'+1
+.b327	b0 02			BCS     nocnv
+.b329	29 df		        AND     #$DF            ; ...convert lower to upper case
+.b32b	09 80		nocnv:  ORA     #$80            ; Set the high bit because... Apple.
+.b32d	8d e5 17	        STA     a_save
+.b330	ad 42 17	        LDA     SBD             ; Get the RIOT register
+.b333	09 01		        ORA     #1              ; Mask in low bit
+.b335	8d 42 17	        STA     SBD             ; And store it
+.b338	ad e5 17	        LDA     a_save          ; Restore A
+.b33b	c9 88		        CMP     #$88            ; Is it a backspace?
+.b33d	d0 02		        BNE     _doner
+.b33f	a9 df		        LDA     #'_'+$80        ; If so, convert to underscore
+.b341	ac e6 17	_doner  LDY     y_save
+.b344	60		        RTS                     ; and return
+
+
+.b345	8c e6 17	Le3d5x: STY     y_save
+.b348	8d e5 17	        STA     a_save
+.b34b	29 7f		        AND     #$7F         ; Remove the high bit...
+.b34d	2c e4 17	        BIT     k_flag       ; Do we treat '_' as a backspace?
+.b350	10 10		        BPL     _justp       ; If not, skip...
+.b352	c9 5f		        CMP     #'_'         ; If so, check for '_'...
+.b354	d0 0c		        BNE     _justp
+.b356	a9 08		        LDA     #8           ; Backspace
+.b358	20 a0 1e	        JSR     OUTCH
+.b35b	a9 20		        LDA     #32          ; Space over it
+.b35d	20 a0 1e	        JSR     OUTCH
+.b360	a9 08		        LDA     #8           ; and backspace again
+.b362	20 a0 1e	_justp: JSR     OUTCH
+.b365	ad e5 17	        LDA     a_save
+.b368	29 7f		        AND     #$7F
+.b36a	c9 0d		        CMP     #$0D         ; For Study: error messages seem to end with $0D
+.b36c	d0 05		        BNE     _donew
+.b36e	a9 0a		        LDA     #$0A         ; If we did a CR, force an LF
+.b370	20 a0 1e	        JSR     OUTCH
+.b373	ac e6 17	_donew  LDY     y_save
+.b376	ad e5 17	        LDA     a_save
+.b379	60		        RTS                  ; and return
+
+.b37a	a2 00		SHWMSG:	LDX #$0         	; Show Message Subroutine
+.b37c	bd 88 b3	PRINT:	LDA MSG1,X      ; Point to message
+.b37f	f0 06			BEQ DONE        ; Did we just load a $00 end-of-string?
+.b381	20 45 b3		JSR Le3d5x      ; If not, print it
+.b384	e8			INX             ; Point to next character
+.b385	d0 f5			BNE PRINT       ; Branch to do it again...
+.b387	60		DONE:	RTS             ; Jump here at end-of-string or 256 characters
+
+			; Our message follows...
+
+>b388	0d 41 70 70	MSG1:	.NULL CR,"Apple 1 Integer BASIC by Steve Wozniak"
+>b38c	6c 65 20 31 20 49 6e 74 65 67 65 72 20 42 41 53
+>b39c	49 43 20 62 79 20 53 74 65 76 65 20 57 6f 7a 6e
+>b3ac	69 61 6b 00
+
+			; Some bytes to use for comparisons...
+
+>b3b0	ff		all_bits .byte $ff           ; Dummy value for BIT instructions above
+>b3b1	00		no_bits  .byte $00           ; Dummy value for BIT instructions above
+
+
+;******  End of listing
