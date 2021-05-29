@@ -1,0 +1,64 @@
+; I/O routines for the PAL-1/KIM-1
+
+; *** KIM ROM Routines ***
+;
+; A routine to send a byte to the console...
+
+; xOutpt	= $1EA0	; Send one byte to the output port (OUTCH)
+
+outchr  sta savea
+        txa
+        sta savex
+        tya
+        sta savey
+        lda savea
+        jsr xOutpt
+        lda savey
+        tay
+        lda savex
+        tax
+        lda savea
+	rts
+
+
+; outstr
+;	example:
+;		jsr library::io::outstr
+; 		asciiz "Hello world,"
+outstr  .proc
+
+	sta saveda
+
+	pla
+	sta returnl	; address low
+	pla
+	sta returnh	; address high
+
+	sty savedy
+
+	; Print each character in turn (first character is offset by one)
+	ldy #0
+loop:	iny
+	lda (return),y
+	beq finished
+	jsr outchr
+	bne loop
+finished:
+	; Sort out the return address so 
+	clc
+	tya
+	adc returnl
+	sta returnl
+	lda #0
+	adc returnh
+	pha
+	lda returnl
+	pha
+
+	ldy savedy
+	lda saveda
+
+	rts
+.pend	; outstr
+
+

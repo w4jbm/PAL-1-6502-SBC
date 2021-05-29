@@ -1,0 +1,570 @@
+; Sudoko Solver for the 6502
+;
+; Original Code by Adrian Conlon (MoleskiCoder on GitHub)
+;
+; Port to the PAL-1 by Jim McClanahan W4JBM, May 2021
+;
+; The brute force solution when the first element was added
+; but I'm fairly sure there is a more elegant way to handle
+; the situation described towards the end where this code
+; resides. --Jim W4JBM
+;
+; From: https://see.stanford.edu/materials/icspacs106b/H19-RecBacktrackExamples.pdf
+;
+; A straightforward port from C to 6502 assembler (although feeling like Forth!)
+;
+; $ 64tass --intel-hex sudoku.a65 -o sudoku.hex -m --verbose-list -L sudoku.lst
+; $ srec_cat sudoku.hex -intel -o sudoku.mos --MOS-technologies -CRLF
+; $ unix2dos pal_memt.mos
+
+; Clock cycles:
+;
+; 65sc02	41,668,796	20.8 seconds @ 2Mhz
+; 6502		46,013,289	23.0 seconds @ 2Mhz
+
+        .cpu "6502"
+
+
+CR = $d
+LF = $a
+
+; Some Page Zero space...
+
+control = $10
+stackp = control
+savea = stackp + 1
+savex = savea + 1
+savey = savex + 1
+returnl = savey +1
+returnh = returnl + 1
+return = returnl
+saveda = returnh + 1
+savedx = saveda + 1
+savedy = savedx + 1
+brtfc = savedy + 1
+
+; *** KIM ROM Routines ***
+;
+; A routine to send a byte to the console...
+xOutpt	= $1EA0	; Send one byte to the output port (OUTCH)
+;
+; ...and the reset vector to restart the system.
+xReset	= $1C4F	; Cold start of the system (START)
+
+
+*       = $2000
+
+start:
+	jmp reset
+
+; http://www.telegraph.co.uk/news/science/science-news/9359579/Worlds-hardest-sudoku-can-you-crack-it.html
+
+puzzle:
+; Original Test Puzzle
+;	.byte 8, 0, 0, 0, 0, 0, 0, 0, 0
+;	.byte 0, 0, 3, 6, 0, 0, 0, 0, 0
+;	.byte 0, 7, 0, 0, 9, 0, 2, 0, 0
+;	.byte 0, 5, 0, 0, 0, 7, 0, 0, 0
+;	.byte 0, 0, 0, 0, 4, 5, 7, 0, 0
+;	.byte 0, 0, 0, 1, 0, 0, 0, 3, 0
+;	.byte 0, 0, 1, 0, 0, 0, 0, 6, 8
+;	.byte 0, 0, 8, 5, 0, 0, 0, 1, 0
+;	.byte 0, 9, 0, 0, 0, 0, 4, 0, 0
+
+; From dailysudoku.com/sudoku/ on May 29, 2021
+; Originally broke things for reasons described
+; in the brute force routine.
+	.byte 0, 0, 8, 6, 0, 0, 2, 0, 0
+	.byte 0, 0, 0, 0, 0, 0, 9, 0, 4
+	.byte 0, 0, 0, 0, 4, 0, 0, 8, 6
+
+	.byte 1, 0, 6, 9, 3, 0, 0, 4, 0
+	.byte 0, 9, 0, 0, 0, 0, 0, 5, 0
+	.byte 0, 4, 0, 0, 6, 5, 7, 0, 9
+
+	.byte 5, 2, 0, 0, 1, 0, 0, 0, 0
+	.byte 6, 0, 3, 0, 0, 0, 0, 0, 0
+	.byte 0, 0, 1, 0, 0, 6, 4, 0, 0
+
+; A Test Puzzle that is the same as the one
+; above, but with the first cell solved.
+;	.byte 4, 0, 8, 6, 0, 0, 2, 0, 0
+;	.byte 0, 0, 0, 0, 0, 0, 9, 0, 4
+;	.byte 0, 0, 0, 0, 4, 0, 0, 8, 6
+;
+;	.byte 1, 0, 6, 9, 3, 0, 0, 4, 0
+;	.byte 0, 9, 0, 0, 0, 0, 0, 5, 0
+;	.byte 0, 4, 0, 0, 6, 5, 7, 0, 9
+;
+;	.byte 5, 2, 0, 0, 1, 0, 0, 0, 0
+;	.byte 6, 0, 3, 0, 0, 0, 0, 0, 0
+;	.byte 0, 0, 1, 0, 0, 6, 4, 0, 0
+
+; A Test Puzzle that is the same as the one
+; above, but with the 3s and 4s swapped. This
+; showed that if the codes "first intelligent
+; guess" was right (in this case, 3), then
+; the puzzle would be solved.
+;	.byte 0, 0, 8, 6, 0, 0, 2, 0, 0
+;	.byte 0, 0, 0, 0, 0, 0, 9, 0, 3
+;	.byte 0, 0, 0, 0, 3, 0, 0, 8, 6
+;
+;	.byte 1, 0, 6, 9, 4, 0, 0, 3, 0
+;	.byte 0, 9, 0, 0, 0, 0, 0, 5, 0
+;	.byte 0, 3, 0, 0, 6, 5, 7, 0, 9
+;
+;	.byte 5, 2, 0, 0, 1, 0, 0, 0, 0
+;	.byte 6, 0, 4, 0, 0, 0, 0, 0, 0
+;	.byte 0, 0, 1, 0, 0, 6, 3, 0, 0
+
+
+; Scratchpad area.  Not sure how long this will be.  Aliased within "proc" scope.
+
+scratch .fill $80
+
+; Some useful constants
+
+UNASSIGNED = 0
+BOARD_SIZE = 9
+CELL_COUNT = (BOARD_SIZE * BOARD_SIZE)
+
+
+.include "stack.a65"
+.include "io.a65"
+
+
+print_board_element .proc
+	lda #' '
+	jsr outchr
+	popx
+	lda puzzle,x
+	beq unassigned
+	adc #'0'
+	jsr outchr
+	jmp finish
+unassigned:
+	lda #'-'
+	jsr outchr
+finish:
+	lda #' '
+	jsr outchr
+	rts
+.pend
+
+print_box_break_vertical .proc
+	lda #'|'
+	jsr outchr
+	rts
+.pend
+
+print_box_break_horizontal .proc
+	jsr outstr
+	.null " --------+---------+--------"
+	rts
+.pend
+
+print_newline .proc
+
+	lda #CR
+	jsr outchr
+	lda #LF
+	jsr outchr
+
+	rts
+.pend
+
+print_board .proc
+
+	jsr print_newline
+	jsr print_newline
+
+	jsr print_box_break_horizontal
+	jsr print_newline
+
+	ldy #0
+loop:
+	pushy
+	jsr print_board_element
+
+	iny
+
+	; horizontal box break
+	lda table_move2box_y,y
+	bne boxh_continue
+	lda table_move2x,y
+	bne boxh_continue
+	jsr print_newline
+	jsr print_box_break_horizontal
+
+boxh_continue:
+	; newline only
+	lda table_move2x,y
+	bne newl_continue
+	jsr print_newline
+	jmp continue
+
+newl_continue:
+	; vertical box break
+	lda table_move2box_x,y
+	bne boxv_continue
+	jsr print_box_break_vertical
+	jmp continue
+
+boxv_continue:
+
+continue:
+	cpy #CELL_COUNT
+	bne loop
+	rts
+
+.pend
+
+;
+; ** Move and grid position translation methods
+;
+
+table_move2x:
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+	.byte 0, 1, 2, 3, 4, 5, 6, 7, 8
+
+table_move2y:
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte 2, 2, 2, 2, 2, 2, 2, 2, 2
+	.byte 3, 3, 3, 3, 3, 3, 3, 3, 3
+	.byte 4, 4, 4, 4, 4, 4, 4, 4, 4
+	.byte 5, 5, 5, 5, 5, 5, 5, 5, 5
+	.byte 6, 6, 6, 6, 6, 6, 6, 6, 6
+	.byte 7, 7, 7, 7, 7, 7, 7, 7, 7
+	.byte 8, 8, 8, 8, 8, 8, 8, 8, 8
+
+table_move2box_x:
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+	.byte 0, 1, 2, 0, 1, 2, 0, 1, 2
+
+table_move2box_y:
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte 2, 2, 2, 2, 2, 2, 2, 2, 2
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte 2, 2, 2, 2, 2, 2, 2, 2, 2
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 1, 1, 1, 1, 1, 1, 1, 1, 1
+	.byte 2, 2, 2, 2, 2, 2, 2, 2, 2
+
+; ** Row, column and box start positions
+
+table_move2row_start:
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 9, 9, 9, 9, 9, 9, 9, 9, 9
+	.byte 18, 18, 18, 18, 18, 18, 18, 18, 18
+	.byte 27, 27, 27, 27, 27, 27, 27, 27, 27
+	.byte 36, 36, 36, 36, 36, 36, 36, 36, 36
+	.byte 45, 45, 45, 45, 45, 45, 45, 45, 45
+	.byte 54, 54, 54, 54, 54, 54, 54, 54, 54
+	.byte 63, 63, 63, 63, 63, 63, 63, 63, 63
+	.byte 72, 72, 72, 72, 72, 72, 72, 72, 72
+
+table_move2box_start:
+	.byte 0,  0,  0,  3,  3,  3,  6,  6,  6
+	.byte 0,  0,  0,  3,  3,  3,  6,  6,  6
+	.byte 0,  0,  0,  3,  3,  3,  6,  6,  6
+	.byte 27, 27, 27, 30, 30, 30, 33, 33, 33
+	.byte 27, 27, 27, 30, 30, 30, 33, 33, 33
+	.byte 27, 27, 27, 30, 30, 30, 33, 33, 33
+	.byte 54, 54, 54, 57, 57, 57, 60, 60, 60
+	.byte 54, 54, 54, 57, 57, 57, 60, 60, 60
+	.byte 54, 54, 54, 57, 57, 57, 60, 60, 60
+
+; Function: is_used_in_row
+; ------------------------
+; Returns a boolean which indicates whether any assigned entry
+; in the specified row matches the given number.
+
+is_used_in_row .macro ; ( a:number x:n -- zero:used non-zero:unused )
+
+	ldy table_move2row_start,x
+
+	cmp puzzle,y
+	beq row_used
+	cmp puzzle+1,y
+	beq row_used
+	cmp puzzle+2,y
+	beq row_used
+	cmp puzzle+3,y
+	beq row_used
+	cmp puzzle+4,y
+	beq row_used
+	cmp puzzle+5,y
+	beq row_used
+	cmp puzzle+6,y
+	beq row_used
+	cmp puzzle+7,y
+	beq row_used
+	cmp puzzle+8,y
+
+row_used:
+.endm
+
+
+; Function: is_used_in_column
+; ---------------------------
+; Returns a boolean which indicates whether any assigned entry
+; in the specified column matches the given number.
+
+is_used_in_column .macro ; ( a:number x:n -- zero:used non-zero:unused )
+
+	ldy table_move2x,x
+
+	cmp puzzle,y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*1),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*2),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*3),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*4),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*5),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*6),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*7),y
+	beq column_used
+	cmp puzzle+(BOARD_SIZE*8),y
+
+column_used:
+.endm
+
+
+; Function: is_used_in_box
+; ------------------------
+; Returns a boolean which indicates whether any assigned entry
+; within the specified 3x3 box matches the given number.
+
+is_used_in_box .macro ; ( a:number x:n -- zero:used non-zero:unused )
+
+	ldy table_move2box_start,x
+
+	cmp puzzle,y
+	beq box_used
+	cmp puzzle+1,y
+	beq box_used
+	cmp puzzle+2,y
+	beq box_used
+	cmp puzzle+BOARD_SIZE,y
+	beq box_used
+	cmp puzzle+BOARD_SIZE+1,y
+	beq box_used
+	cmp puzzle+BOARD_SIZE+2,y
+	beq box_used
+	cmp puzzle+(BOARD_SIZE*2),y
+	beq box_used
+	cmp puzzle+(BOARD_SIZE*2)+1,y
+	beq box_used
+	cmp puzzle+(BOARD_SIZE*2)+2,y
+
+box_used:
+.endm
+
+
+; Function: is_available
+; ----------------------
+; Returns a boolean which indicates whether it will be legal to assign
+; number to the given row, column location.As assignment is legal if it that
+; number is not already used in the row, column, or box.
+
+is_available .macro ; ( a:number x:n -- zero:available non-zero:unavailable )
+
+	is_used_in_row
+	beq used
+
+	is_used_in_column
+	beq used
+
+	is_used_in_box
+	beq used
+
+	tay
+	lda #0
+	beq done
+used:
+	tay
+	; y *must* be non-zero, clearing the zero flag implicitly
+done:
+.endm
+
+
+; Function: solve
+; ---------------
+; Takes a partially filled - in grid and attempts to assign values to all
+; unassigned locations in such a way to meet the requirements for sudoku
+; solution(non - duplication across rows, columns, and boxes).The function
+; operates via recursive backtracking : it finds an unassigned location with
+; the grid and then considers all digits from 1 to "board-size" in a loop.If a digit
+; is found that has no existing conflicts, tentatively assign it and recur
+; to attempt to fill in rest of grid.If this was successful, the puzzle is
+; solved.If not, unmake that decision and try again.If all digits have
+; been examined and none worked out, return false to backtrack to previous
+; decision point.
+
+solve .proc ; ( n -- A:f )
+
+	phx
+
+	popx
+	cpx #CELL_COUNT
+	bne _not_finished
+
+	plx
+	lda #0
+	rts			; success!
+
+_not_finished:
+	lda puzzle,x
+	beq _begin_loop
+
+	inx
+	pushx
+	plx
+
+	jmp solve		; if it's already assigned, skip
+
+_begin_loop:
+	ldy #1
+
+_loop:
+	tya
+	is_available
+	bne _loop_continue	; if looks promising
+
+	tya
+	sta puzzle,x		; make tentative assignment
+
+	pusha
+
+	inx
+	pushx
+	dex
+
+	jsr solve
+
+	pha
+	popy
+	pla
+
+	beq _return_true	; recur, if success, yay!
+
+_loop_continue:
+	iny
+	cpy #BOARD_SIZE + 1	; consider all digits
+	beq _round
+	jmp _loop
+_round:
+
+				; failure, unmake & try again
+	lda #UNASSIGNED
+	sta puzzle,x
+
+_return_false:
+	plx
+	; x *must* be non-zero
+	rts			; this triggers backtracking
+
+_return_true:
+	plx
+	lda #0
+	rts
+
+.pend
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+reset:
+	cld             ; Clear the decimal mode
+	jsr init
+
+	jsr outstr
+ 	.null CR,LF,"Solving puzzle: "
+
+	lda #0
+	cmp puzzle
+	beq brutef
+	pusha
+	jsr solve
+	bne fail
+
+success:
+	jsr outstr
+ 	.null "pass"
+
+	jsr print_board
+
+	jmp end
+
+; There is a bug in the original code that I haven't been able
+; to work through. If the first cell of the puzzle is populated,
+; the code works fine. Also, if the value of the first cell
+; matches the "intelligent guess" first made by the program
+; things work.
+;
+; But if the first cell is empty AND is not the value first
+; tried, it will return a puzzle that says it has been solved
+; but only has that first guess and the unknowns set back to
+; zero.
+;
+; For now, this is my solution. Above we checked for the first
+; cell being empty. Now let's count down from 9 until we find
+; the right value or run out of numbers.
+;
+; This routine brute forces through possible solutions where
+; the first number in the puzzle is not known.
+
+brutef:
+        lda #BOARD_SIZE
+        sta brtfc                  ; store the brute force counter
+        
+bfloop:
+        lda brtfc
+        sta puzzle
+        jsr init
+        lda #0
+        pusha
+        jsr solve
+        beq success
+        
+; ...if that didn't work, try one less
+
+        ldx brtfc
+        dex
+        cpx #0
+        beq fail
+        stx brtfc
+        jmp bfloop
+
+fail:
+	jsr outstr
+ 	.null "fail"
+
+end:
+	jsr outstr
+ 	.byte CR,LF, 0
+	jmp xReset
+
+

@@ -1,0 +1,91 @@
+; Macros related to stack manipulation for
+; sudoku.a65
+;
+
+phx     .macro phx
+        txa
+        pha
+.endm
+
+
+plx     .macro plx
+        pla
+        tax
+.endm
+
+
+phy     .macro
+        tya
+        pha
+.endm
+
+
+ply     .macro
+        pla
+        tay
+.endm
+
+
+pusha   .macro pusha
+	stx savex
+	ldx stackp
+	sta 0,x
+	dex
+	stx stackp
+	ldx savex
+.endm
+
+
+popa    .macro popa
+	stx savex
+	ldx stackp
+	inx
+	stx stackp
+	lda 0,x
+	pha
+	ldx savex
+	pla
+.endm
+
+
+pushx   .macro
+	txa
+	pusha
+.endm
+
+
+popx    .macro
+	popa
+	tax
+.endm
+
+
+pushy   .macro
+	tya
+	pusha
+.endm
+
+
+popy    .macro
+	popa
+	tay
+.endm
+
+; Finish of the handy macros!
+
+
+
+
+
+; Initialise the stack to an empty state
+init    .proc
+
+	pha
+
+	lda #$ff
+	sta stackp
+
+	pla
+	rts
+.pend
+
