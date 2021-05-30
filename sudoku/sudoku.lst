@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex -o sudoku.hex -m --verbose-list -L sudoku.lst sudoku.a65
-; Sat May 29 15:41:00 2021
+; Sun May 30 14:32:58 2021
 
 ;Offset	;Hex		;Source
 
@@ -773,7 +773,7 @@
 .24e0	86 10			stx stackp
 .24e2	a6 12			ldx savex
 .24e4	20 a6 23		jsr solve
-.24e7	d0 38			bne fail
+.24e7	d0 45			bne fail
 
 .24e9			success:
 .24e9	20 f1 20		jsr outstr
@@ -782,7 +782,7 @@
 
 .24f1	20 77 21		jsr print_board
 
-.24f4	4c 29 25		jmp end
+.24f4	4c 36 25		jmp end
 
 			; There is a bug in the original code that I haven't been able
 			; to work through. If the first cell of the puzzle is populated,
@@ -818,26 +818,35 @@
 .250c	86 10			stx stackp
 .250e	a6 12			ldx savex
 .2510	20 a6 23	        jsr solve
-.2513	f0 d4		        beq success
+.2513	a2 50		        ldx #CELL_COUNT-1
+.2515	bd 03 20	bftst:  lda puzzle,X
+.2518	c9 00		        cmp #0
+.251a	f0 06		        beq bfdwn
+.251c	ca		        dex
+.251d	d0 f6		        bne bftst
+
+			; if we get here, there was no zero found in the puzzle
+
+.251f	4c e9 24	        jmp success
 
 			; ...if that didn't work, try one less
 
-.2515	a6 19		        ldx brtfc
-.2517	ca		        dex
-.2518	e0 00		        cpx #0
-.251a	f0 05		        beq fail
-.251c	86 19		        stx brtfc
-.251e	4c fb 24	        jmp bfloop
+.2522	a6 19		bfdwn: ldx brtfc
+.2524	ca		        dex
+.2525	e0 00		        cpx #0
+.2527	f0 05		        beq fail
+.2529	86 19		        stx brtfc
+.252b	4c fb 24	        jmp bfloop
 
-.2521			fail:
-.2521	20 f1 20		jsr outstr
->2524	66 61 69 6c	 	.null "fail"
->2528	00
+.252e			fail:
+.252e	20 f1 20		jsr outstr
+>2531	66 61 69 6c	 	.null "fail"
+>2535	00
 
-.2529			end:
-.2529	20 f1 20		jsr outstr
->252c	0d 0a 00	 	.byte CR,LF, 0
-.252f	4c 4f 1c		jmp xReset
+.2536			end:
+.2536	20 f1 20		jsr outstr
+>2539	0d 0a 00	 	.byte CR,LF, 0
+.253c	4c 4f 1c		jmp xReset
 
 
 

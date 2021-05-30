@@ -547,11 +547,20 @@ bfloop:
         lda #0
         pusha
         jsr solve
-        beq success
+        ldx #CELL_COUNT-1
+bftst:  lda puzzle,X
+        cmp #0
+        beq bfdwn
+        dex
+        bne bftst
+
+; if we get here, there was no zero found in the puzzle
+        
+        jmp success
         
 ; ...if that didn't work, try one less
 
-        ldx brtfc
+bfdwn: ldx brtfc
         dex
         cpx #0
         beq fail
