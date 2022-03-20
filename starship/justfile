@@ -1,0 +1,19 @@
+# Do a list if nothing else is specified...
+_list:
+    @just --list
+
+# Display Disk Usage
+df:
+    @df -h -t ext4 -t vfat -t ext3 -t ext4
+
+# Restart Nord VPN
+make:
+    64tass --intel-hex starship.a65 -o starship.hex -m --verbose-list -L starship.lst
+    srec_cat starship.hex -intel -o starship.mos -MOS_Technologies
+    unix2dos starship.mos
+    cp starship.mos ~
+
+# Start Minicom
+minicom:
+    minicom -s
+
