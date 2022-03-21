@@ -8,4 +8,6 @@ There are two important things this shows from my perspective. All REAL hobbyist
 
 You can also look at it run on [YouTube](https://www.youtube.com/watch?v=UThleUTNTBM).
 
+A couple of tweaks and hacks if you are interested. To get the picture, I just drew a single frame and then put the program in a loop. This gives you what you see in the picture above. To do this, change memory locations starting at `$2136` to `$4C $36 $21`. Also, if you want to tweak the speed you can tweak the value of `$10` at `$323E`. Higher values will make things slower; lower values will speed things up. To get rid of the delay all together you can just do an immediate return out of the route by modifying `$323D` to `$60`.
+
 I have recently started using the JUST utility and it is easier to do the things I want instead of using MAKE. (The steps to build this are in the source as well as pretty evident from the justfile.)
