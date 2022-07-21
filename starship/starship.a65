@@ -4,6 +4,10 @@
 ; By Jim McClanahan, W4JBM, Feb 2021
 ; For the PAL-1 by Liu Ganning (availble on Tindie)
 ;
+; Rev 2 - Add CLD so that it runs no matter which way you load
+;         it or which monitor you are using. (Error encountered
+;         by Will Senn.) (June 2021)
+;
 ; This is not optimized at all. This is totally brute force with the
 ; original goal to be something that could run from ROM without use
 ; of any RAM beyon the Stack (for subroutine calls). Macros and a
@@ -91,7 +95,8 @@ LINES	.macro
 *	= $2000
 
 
-START:	LDA #A_INIT	; Set the data direction bits
+START:	CLD		; Clear Decimal Mode Flag
+	LDA #A_INIT	; Set the data direction bits
 	STA PADD
 
 ;
