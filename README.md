@@ -105,6 +105,8 @@ I have patched it to handle the backspace key instead of using the underscore ch
 
 Cold start is at $0200 and warm start is at $0203.
 
+You can find some examples of in [Dave's GitHub library](https://github.com/fishhack66/PAL-1-Stuff).
+
 
 ## Microsoft 9-Digit BASIC
 
