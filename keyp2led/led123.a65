@@ -1,0 +1,29 @@
+; This program will display "1234 56" on the PAL-1's LEDs
+; 
+; By Jim McClanahan, W4JBM, Sept 2022
+; 
+; Build with:
+; $ 64tass --intel-hex led123.a65 -o led123.hex -m --verbose-list -L led123.lst
+; $ srec_cat led123.hex -intel -o led123.mos -MOS_Technologies
+; $ unix2dos led123.mos
+; $ cp led123.mos ~
+
+; Set the Page Zero locations for digits 12, 34, and 56...
+dig12      = $FB
+dig34      = $FA
+dig56      = $F9
+
+; We will use the SCAND routine in ROM to display the values
+scand      = $1f1f
+
+*          = $0200
+
+start:     cld             ; Always clear decimal
+           lda #$12        ; Display 12
+           sta dig12
+           lda #$34        ; Display 34
+           sta dig34
+           lda #$56        ; Display 56
+           sta dig56
+loop:      jsr scand       ; Now light up the LEDs
+           jmp loop        ; Over and over again...

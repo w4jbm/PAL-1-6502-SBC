@@ -1,0 +1,40 @@
+
+; 64tass Turbo Assembler Macro V1.55.2200 listing file
+; 64tass --intel-hex -o led123.hex -m --verbose-list -L led123.lst led123.a65
+; Mon Sep 12 12:34:22 2022
+
+;Offset	;Hex		;Source
+
+;******  Processing input file: led123.a65
+
+			; This program will display "1234 56" on the PAL-1's LEDs
+			;
+			; By Jim McClanahan, W4JBM, Sept 2022
+			;
+			; Build with:
+			; $ 64tass --intel-hex led123.a65 -o led123.hex -m --verbose-list -L led123.lst
+			; $ srec_cat led123.hex -intel -o led123.mos -MOS_Technologies
+			; $ unix2dos led123.mos
+			; $ cp led123.mos ~
+
+			; Set the Page Zero locations for digits 12, 34, and 56...
+=$fb			dig12      = $FB
+=$fa			dig34      = $FA
+=$f9			dig56      = $F9
+
+			; We will use the SCAND routine in ROM to display the values
+=$1f1f			scand      = $1f1f
+
+			*          = $0200
+
+.0200	d8		start:     cld             ; Always clear decimal
+.0201	a9 12		           lda #$12        ; Display 12
+.0203	85 fb		           sta dig12
+.0205	a9 34		           lda #$34        ; Display 34
+.0207	85 fa		           sta dig34
+.0209	a9 56		           lda #$56        ; Display 56
+.020b	85 f9		           sta dig56
+.020d	20 1f 1f	loop:      jsr scand       ; Now light up the LEDs
+.0210	4c 0d 02	           jmp loop        ; Over and over again...
+
+;******  End of listing
