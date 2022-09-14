@@ -8,6 +8,15 @@
 ; $ srec_cat keyp2led.hex -intel -o keyp2led.mos -MOS_Technologies
 ; $ unix2dos keyp2led.mos
 ; $ cp keyp2led.mos ~
+;
+; Rev 1 was really just a quick proof of concept...
+;
+; Rev 2 moved the bit shifting logic into a subroutine to
+; reduce the size by reducing redundant code. Also I noticed
+; the display would remain blank until you let up on the key
+; because of how I was handling the debounce/repeat condition
+; so added a call to SCAND to that loop. Now it is just a bit
+; improved quick proof of concept. :-)
 
 ; Set the Page Zero locations for digits 12, 34, and 56...
 dig12      = $fb
@@ -27,83 +36,73 @@ getkey     = $1f6a
 *          = $0200
 
 init:      cld             ; Always clear decimal
-           lda #$00        ; Clear the display
+           lda #$00        ; Zero out the display
            sta dig12
            sta dig34
            sta dig56
 
 loop:      jsr scand       ; Light up the LEDs
-
            jsr getkey      ; Scan the keypad
            cmp #$15        ; Was anything pressed?
            beq loop        ; If not, loop...
-           
+
+; A key on the keypad has been pressed, so what do we do?
+
            cmp #$10        ; Is it a (hex) digit?
            bcs functn      ; If not, process as a function
            
-           sta tmpx        ; Store A for later
+           sta tmpx        ; If a digit, store a copy for later
            
-bitshft1:  clc             ; Shift bits up through the...
-           lda dig56       ; one...
-           rol a
-           sta dig56
+; We need to shift the contents of dig12, dig34, and dig56 four
+; bits (one nibble or one digit) to the left to make room for
+; the number that has just been entered. A subroutine does the
+; heavy lifting one bit at a time.           
            
-           lda dig34       ; two...
-           rol a
-           sta dig34
-           
-           lda dig12       ; three bytes
-           rol a
-           sta dig12
+bitshft1:  jsr bitshft     ; Shift bits up one...
+bitshft2:  jsr bitshft     ; ...two...
+bitshft3:  jsr bitshft     ; ...three...
+bitshft4:  jsr bitshft     ; ...and four bits.
 
-bitshft2:  clc             ; Shift bits up through the...
-           lda dig56       ; one...
-           rol a
-           sta dig56
-           
-           lda dig34       ; two...
-           rol a
-           sta dig34
-           
-           lda dig12       ; three bytes
-           rol a
-           sta dig12
-
-bitshft3:  clc             ; Shift bits up through the...
-           lda dig56       ; one...
-           rol a
-           sta dig56
-           
-           lda dig34       ; two...
-           rol a
-           sta dig34
-           
-           lda dig12       ; three bytes
-           rol a
-           sta dig12
-
-bitshft4:  clc             ; Shift bits up through the...
-           lda dig56       ; one...
-           rol a
-           sta dig56
-           
-           lda dig34       ; two...
-           rol a
-           sta dig34
-           
-           lda dig12       ; three bytes
-           rol a
-           sta dig12
+; We made space in the right most digit with our shifts,
+; so now let's put the digit that was pressed there.
            
 newnum:    lda tmpx        ; Now add the new number to the...
            ora dig56       ; ...last nibble of dig56
            sta dig56
 
-wait:      jsr getkey      ; Assembly code blazes, so we keep
+; We now keep looping until the key has been released...
+;
+; Note: The call the SCAND was added because without it
+; the display would "go dark" until you let up on the key.
+
+wait:      jsr scand       ; Display the updated contents
+           jsr getkey      ; Assembly code blazes, so we keep
            cmp tmpx        ; checking which key is pressed until
            beq wait        ; it changes before we loop back
            jmp loop
+
+
+; This subroutine shifts the bits to clear room for the
+; new nibble at the end of the memory locations. It is called
+; four times (once for each bit in the nibble).
+
+bitshft:   clc             ; Shift bits up through the...
+           lda dig56       ; one...
+           rol a
+           sta dig56
            
+           lda dig34       ; two...
+           rol a
+           sta dig34
+           
+           lda dig12       ; three bytes
+           rol a
+           sta dig12      
+           
+           rts             ; Our work here is done...
+
+; This is where we can put some type of function to handle the
+; press of any non-numberic keys on the keypad.
            
 functn:    nop             ; We get here if a non-numberic key was pressed
            jmp loop        ; ...for now, just loop

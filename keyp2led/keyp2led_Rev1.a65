@@ -1,0 +1,109 @@
+; This program will display whatever is typed on the keypad
+; to the PAL-1's LEDs
+; 
+; By Jim McClanahan, W4JBM, Sept 2022
+; 
+; Build with:
+; $ 64tass --intel-hex keyp2led.a65 -o keyp2led.hex -m --verbose-list -L keyp2led.lst
+; $ srec_cat keyp2led.hex -intel -o keyp2led.mos -MOS_Technologies
+; $ unix2dos keyp2led.mos
+; $ cp keyp2led.mos ~
+
+; Set the Page Zero locations for digits 12, 34, and 56...
+dig12      = $fb
+dig34      = $fa
+dig56      = $f9
+
+; We need a temporary storage location
+tmpx     = $fd
+
+; We will use the SCAND routine in ROM to display the values
+scand      = $1f1f
+
+; and the GETKEY routine to poll the keyboard
+getkey     = $1f6a
+
+
+*          = $0200
+
+init:      cld             ; Always clear decimal
+           lda #$00        ; Clear the display
+           sta dig12
+           sta dig34
+           sta dig56
+
+loop:      jsr scand       ; Light up the LEDs
+
+           jsr getkey      ; Scan the keypad
+           cmp #$15        ; Was anything pressed?
+           beq loop        ; If not, loop...
+           
+           cmp #$10        ; Is it a (hex) digit?
+           bcs functn      ; If not, process as a function
+           
+           sta tmpx        ; Store A for later
+           
+bitshft1:  clc             ; Shift bits up through the...
+           lda dig56       ; one...
+           rol a
+           sta dig56
+           
+           lda dig34       ; two...
+           rol a
+           sta dig34
+           
+           lda dig12       ; three bytes
+           rol a
+           sta dig12
+
+bitshft2:  clc             ; Shift bits up through the...
+           lda dig56       ; one...
+           rol a
+           sta dig56
+           
+           lda dig34       ; two...
+           rol a
+           sta dig34
+           
+           lda dig12       ; three bytes
+           rol a
+           sta dig12
+
+bitshft3:  clc             ; Shift bits up through the...
+           lda dig56       ; one...
+           rol a
+           sta dig56
+           
+           lda dig34       ; two...
+           rol a
+           sta dig34
+           
+           lda dig12       ; three bytes
+           rol a
+           sta dig12
+
+bitshft4:  clc             ; Shift bits up through the...
+           lda dig56       ; one...
+           rol a
+           sta dig56
+           
+           lda dig34       ; two...
+           rol a
+           sta dig34
+           
+           lda dig12       ; three bytes
+           rol a
+           sta dig12
+           
+newnum:    lda tmpx        ; Now add the new number to the...
+           ora dig56       ; ...last nibble of dig56
+           sta dig56
+
+wait:      jsr getkey      ; Assembly code blazes, so we keep
+           cmp tmpx        ; checking which key is pressed until
+           beq wait        ; it changes before we loop back
+           jmp loop
+           
+           
+functn:    nop             ; We get here if a non-numberic key was pressed
+           jmp loop        ; ...for now, just loop

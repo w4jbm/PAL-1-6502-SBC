@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex --tab-size=1 -o keyp2led.hex -m --verbose-list -L keyp2led.lst keyp2led.a65
-; Mon Sep 12 17:08:00 2022
+; Wed Sep 14 12:15:02 2022
 
 ;Offset ;Hex            ;Source
 
@@ -17,6 +17,15 @@
                         ; $ srec_cat keyp2led.hex -intel -o keyp2led.mos -MOS_Technologies
                         ; $ unix2dos keyp2led.mos
                         ; $ cp keyp2led.mos ~
+                        ;
+                        ; Rev 1 was really just a quick proof of concept...
+                        ;
+                        ; Rev 2 moved the bit shifting logic into a subroutine to
+                        ; reduce the size by reducing redundant code. Also I noticed
+                        ; the display would remain blank until you let up on the key
+                        ; because of how I was handling the debounce/repeat condition
+                        ; so added a call to SCAND to that loop. Now it is just a bit
+                        ; improved quick proof of concept. :-)
 
                         ; Set the Page Zero locations for digits 12, 34, and 56...
 =$fb                    dig12      = $fb
@@ -36,85 +45,75 @@
                         *          = $0200
 
 .0200   d8              init:      cld             ; Always clear decimal
-.0201   a9 00                      lda #$00        ; Clear the display
+.0201   a9 00                      lda #$00        ; Zero out the display
 .0203   85 fb                      sta dig12
 .0205   85 fa                      sta dig34
 .0207   85 f9                      sta dig56
 
 .0209   20 1f 1f        loop:      jsr scand       ; Light up the LEDs
-
 .020c   20 6a 1f                   jsr getkey      ; Scan the keypad
 .020f   c9 15                      cmp #$15        ; Was anything pressed?
 .0211   f0 f6                      beq loop        ; If not, loop...
 
+                        ; A key on the keypad has been pressed, so what do we do?
+
 .0213   c9 10                      cmp #$10        ; Is it a (hex) digit?
-.0215   b0 52                      bcs functn      ; If not, process as a function
+.0215   b0 32                      bcs functn      ; If not, process as a function
 
-.0217   85 fd                      sta tmpx        ; Store A for later
+.0217   85 fd                      sta tmpx        ; If a digit, store a copy for later
 
-.0219   18              bitshft1:  clc             ; Shift bits up through the...
-.021a   a5 f9                      lda dig56       ; one...
-.021c   2a                         rol a
-.021d   85 f9                      sta dig56
+                        ; We need to shift the contents of dig12, dig34, and dig56 four
+                        ; bits (one nibble or one digit) to the left to make room for
+                        ; the number that has just been entered. A subroutine does the
+                        ; heavy lifting one bit at a time.
 
-.021f   a5 fa                      lda dig34       ; two...
-.0221   2a                         rol a
-.0222   85 fa                      sta dig34
+.0219   20 38 02        bitshft1:  jsr bitshft     ; Shift bits up one...
+.021c   20 38 02        bitshft2:  jsr bitshft     ; ...two...
+.021f   20 38 02        bitshft3:  jsr bitshft     ; ...three...
+.0222   20 38 02        bitshft4:  jsr bitshft     ; ...and four bits.
 
-.0224   a5 fb                      lda dig12       ; three bytes
-.0226   2a                         rol a
-.0227   85 fb                      sta dig12
+                        ; We made space in the right most digit with our shifts,
+                        ; so now let's put the digit that was pressed there.
 
-.0229   18              bitshft2:  clc             ; Shift bits up through the...
-.022a   a5 f9                      lda dig56       ; one...
-.022c   2a                         rol a
-.022d   85 f9                      sta dig56
+.0225   a5 fd           newnum:    lda tmpx        ; Now add the new number to the...
+.0227   05 f9                      ora dig56       ; ...last nibble of dig56
+.0229   85 f9                      sta dig56
 
-.022f   a5 fa                      lda dig34       ; two...
-.0231   2a                         rol a
-.0232   85 fa                      sta dig34
+                        ; We now keep looping until the key has been released...
+                        ;
+                        ; Note: The call the SCAND was added because without it
+                        ; the display would "go dark" until you let up on the key.
 
-.0234   a5 fb                      lda dig12       ; three bytes
-.0236   2a                         rol a
-.0237   85 fb                      sta dig12
-
-.0239   18              bitshft3:  clc             ; Shift bits up through the...
-.023a   a5 f9                      lda dig56       ; one...
-.023c   2a                         rol a
-.023d   85 f9                      sta dig56
-
-.023f   a5 fa                      lda dig34       ; two...
-.0241   2a                         rol a
-.0242   85 fa                      sta dig34
-
-.0244   a5 fb                      lda dig12       ; three bytes
-.0246   2a                         rol a
-.0247   85 fb                      sta dig12
-
-.0249   18              bitshft4:  clc             ; Shift bits up through the...
-.024a   a5 f9                      lda dig56       ; one...
-.024c   2a                         rol a
-.024d   85 f9                      sta dig56
-
-.024f   a5 fa                      lda dig34       ; two...
-.0251   2a                         rol a
-.0252   85 fa                      sta dig34
-
-.0254   a5 fb                      lda dig12       ; three bytes
-.0256   2a                         rol a
-.0257   85 fb                      sta dig12
-
-.0259   a5 fd           newnum:    lda tmpx        ; Now add the new number to the...
-.025b   05 f9                      ora dig56       ; ...last nibble of dig56
-.025d   85 f9                      sta dig56
-
-.025f   20 6a 1f        wait:      jsr getkey      ; Assembly code blazes, so we keep
-.0262   c5 fd                      cmp tmpx        ; checking which key is pressed until
-.0264   f0 f9                      beq wait        ; it changes before we loop back
-.0266   4c 09 02                   jmp loop
+.022b   20 1f 1f        wait:      jsr scand       ; Display the updated contents
+.022e   20 6a 1f                   jsr getkey      ; Assembly code blazes, so we keep
+.0231   c5 fd                      cmp tmpx        ; checking which key is pressed until
+.0233   f0 f6                      beq wait        ; it changes before we loop back
+.0235   4c 09 02                   jmp loop
 
 
-.0269   ea              functn:    nop             ; We get here if a non-numberic key was pressed
-.026a   4c 09 02                   jmp loop        ; ...for now, just loop
+                        ; This subroutine shifts the bits to clear room for the
+                        ; new nibble at the end of the memory locations. It is called
+                        ; four times (once for each bit in the nibble).
+
+.0238   18              bitshft:   clc             ; Shift bits up through the...
+.0239   a5 f9                      lda dig56       ; one...
+.023b   2a                         rol a
+.023c   85 f9                      sta dig56
+
+.023e   a5 fa                      lda dig34       ; two...
+.0240   2a                         rol a
+.0241   85 fa                      sta dig34
+
+.0243   a5 fb                      lda dig12       ; three bytes
+.0245   2a                         rol a
+.0246   85 fb                      sta dig12
+
+.0248   60                         rts             ; Our work here is done...
+
+                        ; This is where we can put some type of function to handle the
+                        ; press of any non-numberic keys on the keypad.
+
+.0249   ea              functn:    nop             ; We get here if a non-numberic key was pressed
+.024a   4c 09 02                   jmp loop        ; ...for now, just loop
 
 ;******  End of listing
