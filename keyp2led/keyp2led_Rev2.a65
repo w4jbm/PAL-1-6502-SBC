@@ -74,25 +74,13 @@ newnum:    lda tmpx        ; Now add the new number to the...
 ;
 ; Note: The call the SCAND was added because without it
 ; the display would "go dark" until you let up on the key.
-;
-; Note: I have also added logic that uses a one byte counter
-; to see if you've looped through wait 256 times (rolls back
-; to zero). If you have, it jumps back up loop. This gives
-; a "repeat" function to pressing a key with roughly a second
-; between repetitions.
 
-           lda #0          ; Initialize delay counter
-           sta dlycnt
 wait:      jsr scand       ; Display the updated contents
            jsr getkey      ; Assembly code blazes, so we keep
            cmp tmpx        ; checking which key is pressed until
-           bne loop        ; it changes before we loop back
-           inc dlycnt      ; Increment the delay counter...
-           bne wait        ; and make sure it hasn't looped to
-                           ;     zero, if not zero, keep waiting
-           jmp loop        ; If it is 0, fall through to this
-                           ;     which is just like the key was
-                           ;     pressed again 
+           beq wait        ; it changes before we loop back
+           jmp loop
+
 
 ; This subroutine shifts the bits to clear room for the
 ; new nibble at the end of the memory locations. It is called
@@ -118,8 +106,3 @@ bitshft:   clc             ; Shift bits up through the...
            
 functn:    nop             ; We get here if a non-numberic key was pressed
            jmp loop        ; ...for now, just loop
-
-
-; Some Local storage...
-
-dlycnt    .byte 0

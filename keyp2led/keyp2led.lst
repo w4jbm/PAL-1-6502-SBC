@@ -1,7 +1,7 @@
 
 ; 64tass Turbo Assembler Macro V1.55.2200 listing file
 ; 64tass --intel-hex --tab-size=1 -o keyp2led.hex -m --verbose-list -L keyp2led.lst keyp2led.a65
-; Wed Sep 14 12:15:02 2022
+; Wed Sep 14 12:53:22 2022
 
 ;Offset ;Hex            ;Source
 
@@ -58,7 +58,7 @@
                         ; A key on the keypad has been pressed, so what do we do?
 
 .0213   c9 10                      cmp #$10        ; Is it a (hex) digit?
-.0215   b0 32                      bcs functn      ; If not, process as a function
+.0215   b0 3c                      bcs functn      ; If not, process as a function
 
 .0217   85 fd                      sta tmpx        ; If a digit, store a copy for later
 
@@ -67,10 +67,10 @@
                         ; the number that has just been entered. A subroutine does the
                         ; heavy lifting one bit at a time.
 
-.0219   20 38 02        bitshft1:  jsr bitshft     ; Shift bits up one...
-.021c   20 38 02        bitshft2:  jsr bitshft     ; ...two...
-.021f   20 38 02        bitshft3:  jsr bitshft     ; ...three...
-.0222   20 38 02        bitshft4:  jsr bitshft     ; ...and four bits.
+.0219   20 42 02        bitshft1:  jsr bitshft     ; Shift bits up one...
+.021c   20 42 02        bitshft2:  jsr bitshft     ; ...two...
+.021f   20 42 02        bitshft3:  jsr bitshft     ; ...three...
+.0222   20 42 02        bitshft4:  jsr bitshft     ; ...and four bits.
 
                         ; We made space in the right most digit with our shifts,
                         ; so now let's put the digit that was pressed there.
@@ -83,37 +83,54 @@
                         ;
                         ; Note: The call the SCAND was added because without it
                         ; the display would "go dark" until you let up on the key.
+                        ;
+                        ; Note: I have also added logic that uses a one byte counter
+                        ; to see if you've looped through wait 256 times (rolls back
+                        ; to zero). If you have, it jumps back up loop. This gives
+                        ; a "repeat" function to pressing a key with roughly a second
+                        ; between repetitions.
 
-.022b   20 1f 1f        wait:      jsr scand       ; Display the updated contents
-.022e   20 6a 1f                   jsr getkey      ; Assembly code blazes, so we keep
-.0231   c5 fd                      cmp tmpx        ; checking which key is pressed until
-.0233   f0 f6                      beq wait        ; it changes before we loop back
-.0235   4c 09 02                   jmp loop
-
+.022b   a9 00                      lda #0          ; Initialize delay counter
+.022d   8d 57 02                   sta dlycnt
+.0230   20 1f 1f        wait:      jsr scand       ; Display the updated contents
+.0233   20 6a 1f                   jsr getkey      ; Assembly code blazes, so we keep
+.0236   c5 fd                      cmp tmpx        ; checking which key is pressed until
+.0238   d0 cf                      bne loop        ; it changes before we loop back
+.023a   ee 57 02                   inc dlycnt      ; Increment the delay counter...
+.023d   d0 f1                      bne wait        ; and make sure it hasn't looped to
+                                                   ;     zero, if not zero, keep waiting
+.023f   4c 09 02                   jmp loop        ; If it is 0, fall through to this
+                                                   ;     which is just like the key was
+                                                   ;     pressed again
 
                         ; This subroutine shifts the bits to clear room for the
                         ; new nibble at the end of the memory locations. It is called
                         ; four times (once for each bit in the nibble).
 
-.0238   18              bitshft:   clc             ; Shift bits up through the...
-.0239   a5 f9                      lda dig56       ; one...
-.023b   2a                         rol a
-.023c   85 f9                      sta dig56
-
-.023e   a5 fa                      lda dig34       ; two...
-.0240   2a                         rol a
-.0241   85 fa                      sta dig34
-
-.0243   a5 fb                      lda dig12       ; three bytes
+.0242   18              bitshft:   clc             ; Shift bits up through the...
+.0243   a5 f9                      lda dig56       ; one...
 .0245   2a                         rol a
-.0246   85 fb                      sta dig12
+.0246   85 f9                      sta dig56
 
-.0248   60                         rts             ; Our work here is done...
+.0248   a5 fa                      lda dig34       ; two...
+.024a   2a                         rol a
+.024b   85 fa                      sta dig34
+
+.024d   a5 fb                      lda dig12       ; three bytes
+.024f   2a                         rol a
+.0250   85 fb                      sta dig12
+
+.0252   60                         rts             ; Our work here is done...
 
                         ; This is where we can put some type of function to handle the
                         ; press of any non-numberic keys on the keypad.
 
-.0249   ea              functn:    nop             ; We get here if a non-numberic key was pressed
-.024a   4c 09 02                   jmp loop        ; ...for now, just loop
+.0253   ea              functn:    nop             ; We get here if a non-numberic key was pressed
+.0254   4c 09 02                   jmp loop        ; ...for now, just loop
+
+
+                        ; Some Local storage...
+
+>0257   00              dlycnt    .byte 0
 
 ;******  End of listing
