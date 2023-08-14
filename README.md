@@ -144,7 +144,7 @@ I had to use X in the message routine because the A and Y registers are changed 
 
 ## Srecord use and bug...
 
-I use s`rec_cat` a lot to convert things into the MOS Technologies punched tape format. You can make patches and then fix the checksums with something like:
+I use `srec_cat` a lot to convert things into the MOS Technologies punched tape format. You can make patches and then fix the checksums with something like:
 
 ```
 $ srec_cat -ignore-checksum -line-length 41 prog.mos -MOS_Technologies -o prog.mos -MOS_Technologies
