@@ -25,9 +25,9 @@ Typing 'z' will start the eWoz monitor which is ran out of ROM (but does use a n
 
 Typing 'X' will return you to the PAL-1's regular monitor.
 
-There is also an 'M' option that is not listed. This will copy the memory test program by Jim butterfield that can be found in the First Book of KIM and also the August 1977 issue of Dr. Dobb's Journal. It is set up to test the 32K memory expansion board and you will be put into the PAL-1's monitor at $0002. All you should have to do is type 'G' for the memory test to run. If it runs successfully, you will return to the monitor pointing to $A000 (the first address past the range tested). If it encounters and error, you will return to the monitor pointing to the address where an error was enountered.
+There is also an 'M' option that is not listed. This will copy the memory test program by Jim Butterfield that can be found in the First Book of KIM and also the August 1977 issue of Dr. Dobb's Journal. It is set up to test the 32K memory expansion board and you will be put into the PAL-1's monitor at $0002. All you should have to do is type 'G' for the memory test to run. If it runs successfully, you will return to the monitor pointing to $A000 (the first address past the range tested). If it encounters an error, you will return to the monitor pointing to the address where an error was encountered.
 
-NOTE: During development I am getting occassional memory errors, but at this point I believe those are due to the rather messy breadboard layout I am using.
+NOTE: During development I am getting occassional memory errors, but at this point I believe those are due to the rather messy breadboard layout I used to first prototype a ROM expansion board.
 
 The ROM loader converts all input to upper case, so lower case leters can be entered and will work.
 
